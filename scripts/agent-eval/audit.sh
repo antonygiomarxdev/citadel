@@ -21,7 +21,7 @@ HARNESS="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HARNESS/../.." && pwd)"     # codegraph repo root
 CORPUS="${CORPUS:-/tmp/codegraph-corpus}"
 REPO="$CORPUS/$NAME"
-PKG="@colbymchenry/codegraph"
+PKG="citadel-codegraph"
 
 echo "==================== CodeGraph audit ===================="
 echo "version=$VERSION  repo=$NAME  mode=$MODE  corpus=$CORPUS"

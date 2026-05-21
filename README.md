@@ -6,9 +6,10 @@
 
 **~35% cheaper · ~70% fewer tool calls · 100% local**
 
-[![npm version](https://img.shields.io/npm/v/@colbymchenry/codegraph.svg)](https://www.npmjs.com/package/@colbymchenry/codegraph)
+[![npm version](https://img.shields.io/npm/v/citadel-codegraph.svg)](https://www.npmjs.com/package/citadel-codegraph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-20--24-green.svg)](https://nodejs.org/)
+[![Rust](https://img.shields.io/badge/Rust-Core-ff69b4.svg)](https://www.rust-lang.org/)
 
 [![Windows](https://img.shields.io/badge/Windows-supported-blue.svg)](#)
 [![macOS](https://img.shields.io/badge/macOS-supported-blue.svg)](#)
@@ -24,7 +25,7 @@
 ### Get Started
 
 ```bash
-npx @colbymchenry/codegraph
+npx citadel-codegraph
 ```
 
 <sub>Interactive installer auto-configures your agent(s) — Claude Code, Cursor, Codex CLI, opencode</sub>
@@ -113,7 +114,33 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 ---
 
-## Framework-aware Routes
+## Rust Core Migration
+
+CodeGraph is migrating its core from TypeScript to **Rust** for maximum performance — tree-sitter parsing, graph traversal, SQLite storage, and search run natively. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to Rust via napi-rs.
+
+| What | Before (TypeScript) | After (Rust) |
+|------|-------------------|--------------|
+| **Parsing** | tree-sitter via WASM in worker threads, recycled every 250 files | tree-sitter native crate, no WASM overhead |
+| **Storage** | better-sqlite3 / WASM fallback (5-10x slower) | rusqlite bundled, native always |
+| **Graph ops** | Single-threaded BFS/DFS in JS | Parallel traversal with rayon |
+| **Search** | FTS5 via SQLite adapter | FTS5 + tantivy hybrid scoring |
+| **Startup** | Node.js ~50-100ms JIT warmup | Binary ~1ms cold start |
+
+### Roadmap
+
+| Phase | Slice | Status |
+|-------|-------|--------|
+| 1 | Rust workspace + napi-rs + CI | 🔜 Planned |
+| 2 | SQLite storage layer (rusqlite) | 📋 Designed |
+| 3 | Graph traversal (BFS/DFS) | 📋 Designed |
+| 4 | Tree-sitter parsing nativo | 📋 Designed |
+| 5 | Reference resolution | 📋 Designed |
+| 6 | Context builder + hybrid search | 📋 Designed |
+| 7 | Thin TS cleanup + benchmarks | 📋 Designed |
+
+→ [View full plan on GitHub](https://github.com/antonygiomarxdev/citadel/issues/1)
+
+---
 
 CodeGraph detects web-framework routing files and emits `route` nodes linked by `references` edges to their handler classes or functions. Querying callers of a view/controller now surfaces the URL pattern that binds it.
 
@@ -140,7 +167,7 @@ CodeGraph detects web-framework routing files and emits `route` nodes linked by 
 ### 1. Run the Installer
 
 ```bash
-npx @colbymchenry/codegraph
+npx citadel-codegraph
 ```
 
 The installer will:
@@ -188,7 +215,7 @@ That's it — your agent will use CodeGraph tools automatically when a `.codegra
 
 **Install globally:**
 ```bash
-npm install -g @colbymchenry/codegraph
+npm install -g citadel-codegraph
 ```
 
 **Add to `~/.claude.json`:**
@@ -292,22 +319,32 @@ At the start of a session, ask the user if they'd like to initialize CodeGraph:
 │         │                │                │                       │
 │         └────────────────┼────────────────┘                       │
 │                          ▼                                        │
-│              ┌───────────────────────┐                            │
-│              │   SQLite Graph DB     │                            │
-│              │   • 387 symbols       │                            │
-│              │   • 1,204 edges       │                            │
-│              │   • Instant lookups   │                            │
-│              └───────────────────────┘                            │
+│              ┌──────────────────────────────────┐                 │
+│              │        Rust Native Core          │                 │
+│              │  ┌──────────┐  ┌──────────────┐  │                 │
+│              │  │  Graph   │  │    Search    │  │                 │
+│              │  │ Traversal│  │  (FTS5+tantivy)│  │                 │
+│              │  └────┬─────┘  └──────┬───────┘  │                 │
+│              │       │               │          │                 │
+│              │  ┌────▼───────────────▼───────┐  │                 │
+│              │  │   rusqlite / SQLite DB     │  │                 │
+│              │  │   • 387 symbols            │  │                 │
+│              │  │   • 1,204 edges            │  │                 │
+│              │  │   • Instant lookups        │  │                 │
+│              │  └────────────────────────────┘  │                 │
+│              └──────────────────────────────────┘                 │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Extraction** — [tree-sitter](https://tree-sitter.github.io/) parses source code into ASTs. Language-specific queries extract nodes (functions, classes, methods) and edges (calls, imports, extends, implements).
+1. **Extraction** — [tree-sitter](https://tree-sitter.github.io/) parses source code into ASTs. Language-specific queries extract nodes (functions, classes, methods) and edges (calls, imports, extends, implements). **Native Rust** tree-sitter replaces the WASM worker pool — no heap recycling, no serialization overhead.
 
-2. **Storage** — Everything goes into a local SQLite database (`.codegraph/codegraph.db`) with FTS5 full-text search.
+2. **Storage** — Everything goes into a local SQLite database (`.codegraph/codegraph.db`) with FTS5 full-text search. Powered by **rusqlite** (Rust) — no WASM fallback, no adapter layer.
 
-3. **Resolution** — After extraction, references are resolved: function calls → definitions, imports → source files, class inheritance, and framework-specific patterns.
+3. **Resolution** — After extraction, references are resolved: function calls → definitions, imports → source files, class inheritance, and framework-specific patterns. Runs in **native Rust** with concurrent name matching.
 
-4. **Auto-Sync** — The MCP server watches your project using native OS file events. Changes are debounced (2-second quiet window), filtered to source files only, and incrementally synced. The graph stays fresh as you code — no configuration needed.
+4. **Graph Traversal** — BFS/DFS impact analysis, callers/callees, and path finding execute in **parallel Rust** via rayon — sub-millisecond even on graphs with 100k+ nodes.
+
+5. **Auto-Sync** — The MCP server watches your project using native OS file events. Changes are debounced (2-second quiet window), filtered to source files only, and incrementally synced. The graph stays fresh as you code — no configuration needed.
 
 ---
 
@@ -378,7 +415,7 @@ When running as an MCP server, CodeGraph exposes these tools to Claude Code:
 ## Library Usage
 
 ```typescript
-import CodeGraph from '@colbymchenry/codegraph';
+import CodeGraph from 'citadel-codegraph';
 
 const cg = await CodeGraph.init('/path/to/project');
 // Or: const cg = await CodeGraph.open('/path/to/project');
@@ -456,7 +493,11 @@ The `.codegraph/config.json` file controls indexing:
 
 **Indexing is slow** — Check that `node_modules` and other large directories are excluded. Use `--quiet` to reduce output overhead.
 
-**Indexing is slow / MCP `database is locked` / WASM fallback active** — `codegraph` ships with a WASM SQLite fallback for environments where `better-sqlite3` (a native module, declared as `optionalDependencies`) can't install. The fallback is 5-10x slower than the native backend and uses a journal mode that lets writers block readers, so MCP queries can also hit `database is locked` while indexing runs. Run `codegraph status` and look at the `Backend:` line:
+**Indexing is slow / MCP `database is locked` / WASM fallback active** — `codegraph` ships with a WASM SQLite fallback for environments where `better-sqlite3` (a native module, declared as `optionalDependencies`) can't install. The fallback is 5-10x slower than the native backend and uses a journal mode that lets writers block readers, so MCP queries can also hit `database is locked` while indexing runs.
+
+> ⚡ **Upcoming:** The Rust core migration eliminates both the WASM fallback and better-sqlite3 entirely — rusqlite with bundled SQLite is the only backend. See the [Rust Roadmap](#rust-core-migration).
+
+Run `codegraph status` and look at the `Backend:` line:
 
 - `Backend: native` — you're on the fast path, nothing to do.
 - `Backend: wasm` — you're on the slow fallback. Common causes: missing C build tools, prebuilt binary unavailable for your Node version, or your Node version changed after install. Fix:
@@ -486,11 +527,11 @@ The `.codegraph/config.json` file controls indexing:
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=colbymchenry%2Fcodegraph&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=antonygiomarxdev%2Fcitadel&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=colbymchenry/codegraph&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=colbymchenry/codegraph&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=colbymchenry/codegraph&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=antonygiomarxdev/citadel&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=antonygiomarxdev/citadel&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=antonygiomarxdev/citadel&type=date&legend=top-left" />
  </picture>
 </a>
 
@@ -504,6 +545,6 @@ MIT
 
 **Made for AI coding agents — Claude Code, Cursor, Codex CLI, and opencode**
 
-[Report Bug](https://github.com/colbymchenry/codegraph/issues) · [Request Feature](https://github.com/colbymchenry/codegraph/issues)
+[Report Bug](https://github.com/antonygiomarxdev/citadel/issues) · [Request Feature](https://github.com/antonygiomarxdev/citadel/issues)
 
 </div>

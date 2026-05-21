@@ -4,7 +4,7 @@
  * The instructions template moved to `instructions-template.ts` so it
  * can be shared across all agent targets (Claude Code, Cursor, Codex
  * CLI, opencode). This file is preserved purely so existing imports
- * (`@colbymchenry/codegraph` consumers, downstream tooling) keep
+ * (`citadel-codegraph` consumers, downstream tooling) keep
  * working unchanged. New code should import from
  * `./instructions-template` directly.
  *

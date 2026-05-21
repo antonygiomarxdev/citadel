@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to CodeGraph are documented here. Each entry also ships as
-a [GitHub Release](https://github.com/colbymchenry/codegraph/releases) tagged
+a [GitHub Release](https://github.com/antonygiomarxdev/citadel/releases) tagged
 `vX.Y.Z`, which is where most people will look.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
@@ -158,7 +158,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CodeGraph's copy. CodeGraph now requires `better-sqlite3` `^12.4.1`, whose
   prebuilds include Node 24, so a fresh install on Node 22 or Node 24 gets the
   native backend with no compiler. On an already-broken install, reinstall
-  CodeGraph (e.g. `npm install -g @colbymchenry/codegraph`) to pull the new
+  CodeGraph (e.g. `npm install -g citadel-codegraph`) to pull the new
   binding; `codegraph status` should then report `Backend: native`. Thanks to
   [@Finndersen](https://github.com/Finndersen) for the report.
 - **MCP**: tools no longer fail with "CodeGraph not initialized" when the index
@@ -261,8 +261,8 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
       returns `null` instead of resolving to an unrelated `rollback`
       in the same file.
 
-[0.8.0]: https://github.com/colbymchenry/codegraph/releases/tag/v0.8.0
-[0.7.10]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.10
+[0.8.0]: https://github.com/antonygiomarxdev/citadel/releases/tag/v0.8.0
+[0.7.10]: https://github.com/antonygiomarxdev/citadel/releases/tag/v0.7.10
 
 ## [0.7.8] - 2026-05-17
 
@@ -285,7 +285,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   re-install / uninstall round-trips — surgical edits via `jsonc-parser`
   rather than full-file rewrites.
 
-[0.7.8]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.8
+[0.7.8]: https://github.com/antonygiomarxdev/citadel/releases/tag/v0.7.8
 
 ## [0.7.7] - 2026-05-17
 
@@ -340,7 +340,7 @@ Based on substantive draft by [@andreinknv](https://github.com/andreinknv)
 ([fork commit `c5165e4`](https://github.com/andreinknv/codegraph/commit/c5165e4)).
 Thank you.
 
-[0.7.7]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.7
+[0.7.7]: https://github.com/antonygiomarxdev/citadel/releases/tag/v0.7.7
 
 ## [0.7.6] - 2026-05-13
 
@@ -352,7 +352,7 @@ Thank you.
 
   Already on 0.7.5? Either upgrade to 0.7.6, or unblock yourself in place:
   ```bash
-  chmod +x "$(npm root -g)/@colbymchenry/codegraph/dist/bin/codegraph.js"
+  chmod +x "$(npm root -g)/citadel-codegraph/dist/bin/codegraph.js"
   ```
 
-[0.7.6]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.6
+[0.7.6]: https://github.com/antonygiomarxdev/citadel/releases/tag/v0.7.6

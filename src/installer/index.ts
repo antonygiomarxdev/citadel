@@ -118,11 +118,11 @@ export async function runInstallerWithOptions(opts: RunInstallerOptions): Promis
       const s = clack.spinner();
       s.start('Installing codegraph CLI...');
       try {
-        execSync('npm install -g @colbymchenry/codegraph', { stdio: 'pipe' });
+        execSync('npm install -g citadel-codegraph', { stdio: 'pipe' });
         s.stop('Installed codegraph CLI on PATH');
       } catch {
         s.stop('Could not install (permission denied)');
-        clack.log.warn('Try: sudo npm install -g @colbymchenry/codegraph');
+        clack.log.warn('Try: sudo npm install -g citadel-codegraph');
       }
     } else {
       clack.log.info('Skipped CLI install — agents will not be able to launch the MCP server without it');

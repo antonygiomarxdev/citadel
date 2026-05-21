@@ -72,7 +72,7 @@ Read the commit subjects; for any whose user impact is unclear, inspect the diff
 - Header: `## [X.Y.Z] - YYYY-MM-DD` (get the date with `date +%F`).
 - Group under `### Added`, `### Changed`, `### Fixed`, `### Removed`, `### Deprecated`, `### Security` — **omit empty sections**.
 - Write from the **user's perspective** (observable capability/symptom), not the implementation. Collapse noisy commits ("fix typo", "address review") into the feature they belong to or drop them.
-- Plan the bottom link reference: `[X.Y.Z]: https://github.com/colbymchenry/codegraph/releases/tag/vX.Y.Z`.
+- Plan the bottom link reference: `[X.Y.Z]: https://github.com/antonygiomarxdev/citadel/releases/tag/vX.Y.Z`.
 
 Do not write to any file yet — draft it for review first.
 

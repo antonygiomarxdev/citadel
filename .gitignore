@@ -3,6 +3,11 @@ node_modules/
 
 # Build output
 dist/
+target/
+Cargo.lock
+
+# Native bindings (platform-specific, built by napi build)
+*.node
 
 .cmem
 

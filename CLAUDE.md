@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CodeGraph is a local-first code intelligence library + CLI + MCP server. It parses any supported codebase with tree-sitter, stores symbols/edges/files in SQLite (FTS5), and exposes a knowledge graph to AI agents (Claude Code, Cursor, Codex CLI, opencode) over MCP. Per-project data lives in `.codegraph/`. Extraction is deterministic — derived from AST, not LLM-summarized.
 
-Distributed as `@colbymchenry/codegraph` on npm; same binary serves as installer, indexer, and MCP server.
+Distributed as `citadel-codegraph` on npm; same binary serves as installer, indexer, and MCP server.
 
 ## Build, Test, Run
 
@@ -71,7 +71,7 @@ Defined in `src/types.ts`. Both extractors and resolvers must use these exact st
 
 ### Multi-agent installer
 
-`src/installer/` is the entry point for `codegraph install` (and the bare `codegraph`/`npx @colbymchenry/codegraph` invocation). Architecture:
+`src/installer/` is the entry point for `codegraph install` (and the bare `codegraph`/`npx citadel-codegraph` invocation). Architecture:
 
 - `targets/registry.ts` lists every supported agent.
 - `targets/types.ts` defines the `AgentTarget` interface — adding a 5th agent (Continue, Zed, Windsurf…) is **one new file in `targets/` + one entry in `registry.ts`**. Each target owns its config-file location, MCP-server JSON/TOML/JSONC writing, and instructions-file path.
@@ -103,7 +103,7 @@ Tests create temp dirs with `fs.mkdtempSync` and clean up in `afterEach`. They w
 
 ## Releases
 
-Released to npm and mirrored as [GitHub Releases](https://github.com/colbymchenry/codegraph/releases). `CHANGELOG.md` is the source of truth; GitHub Release notes are extracted from it.
+Released to npm and mirrored as [GitHub Releases](https://github.com/antonygiomarxdev/citadel/releases). `CHANGELOG.md` is the source of truth; GitHub Release notes are extracted from it.
 
 ### Writing changelog entries
 
@@ -112,7 +112,7 @@ When asked for an entry for a new version:
 1. Add a new `## [X.Y.Z] - YYYY-MM-DD` block at the **top** of `CHANGELOG.md` (under the intro, above the previous version).
 2. Group under `### Added`, `### Changed`, `### Fixed`, `### Removed`, `### Deprecated`, `### Security` — omit empty sections.
 3. Write from the **user's perspective**, not the implementation's. Lead with the observable symptom or capability; mention internals only if a user needs them (e.g., to work around an existing bad install).
-4. Add the link reference at the bottom: `[X.Y.Z]: https://github.com/colbymchenry/codegraph/releases/tag/vX.Y.Z`.
+4. Add the link reference at the bottom: `[X.Y.Z]: https://github.com/antonygiomarxdev/citadel/releases/tag/vX.Y.Z`.
 
 ### Release flow (the user runs these)
 

@@ -1,0 +1,15 @@
+[package]
+name = "codegraph-napi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", features = ["default"] }
+napi-derive = "2"
+codegraph-core = { path = "../codegraph-core" }
+
+[build-dependencies]
+napi-build = "2"
