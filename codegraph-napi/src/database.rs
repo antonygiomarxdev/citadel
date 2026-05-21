@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Mutex;
 
 use codegraph_core::storage::sqlite::SqliteStorage;
@@ -7,6 +8,12 @@ use codegraph_core::types::*;
 #[napi]
 pub struct Database {
     inner: Mutex<SqliteStorage>,
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[napi]

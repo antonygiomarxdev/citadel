@@ -364,7 +364,7 @@ impl Storage for SqliteStorage {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE id = ?1")?;
             let result = stmt
-                .query_row(params![id], |row| Self::row_to_node(row))
+                .query_row(params![id], Self::row_to_node)
                 .optional()?;
             Ok(result)
         })
@@ -373,7 +373,7 @@ impl Storage for SqliteStorage {
     fn get_nodes_by_file(&self, file_path: &str) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE file_path = ?1 ORDER BY start_line")?;
-            let rows = stmt.query_map(params![file_path], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map(params![file_path], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -385,7 +385,7 @@ impl Storage for SqliteStorage {
     fn get_nodes_by_kind(&self, kind: &NodeKind) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE kind = ?1")?;
-            let rows = stmt.query_map(params![kind.as_str()], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map(params![kind.as_str()], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -397,7 +397,7 @@ impl Storage for SqliteStorage {
     fn get_all_nodes(&self) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes")?;
-            let rows = stmt.query_map([], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map([], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -409,7 +409,7 @@ impl Storage for SqliteStorage {
     fn get_nodes_by_name(&self, name: &str) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE name = ?1")?;
-            let rows = stmt.query_map(params![name], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map(params![name], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -421,7 +421,7 @@ impl Storage for SqliteStorage {
     fn get_nodes_by_qualified_name(&self, qn: &str) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE qualified_name = ?1")?;
-            let rows = stmt.query_map(params![qn], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map(params![qn], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -433,7 +433,7 @@ impl Storage for SqliteStorage {
     fn get_nodes_by_lower_name(&self, name: &str) -> Result<Vec<Node>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE lower(name) = lower(?1)")?;
-            let rows = stmt.query_map(params![name], |row| Self::row_to_node(row))?;
+            let rows = stmt.query_map(params![name], Self::row_to_node)?;
             let mut nodes = Vec::new();
             for row in rows {
                 nodes.push(row?);
@@ -527,7 +527,7 @@ impl Storage for SqliteStorage {
 
             let param_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(param_refs.as_slice(), |row| Self::row_to_edge(row))?;
+            let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_edge)?;
             let mut edges = Vec::new();
             for row in rows {
                 edges.push(row?);
@@ -548,7 +548,7 @@ impl Storage for SqliteStorage {
 
             let param_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(param_refs.as_slice(), |row| Self::row_to_edge(row))?;
+            let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_edge)?;
             let mut edges = Vec::new();
             for row in rows {
                 edges.push(row?);
@@ -578,7 +578,7 @@ impl Storage for SqliteStorage {
 
             let param_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(param_refs.as_slice(), |row| Self::row_to_edge(row))?;
+            let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_edge)?;
             let mut edges = Vec::new();
             for row in rows {
                 edges.push(row?);
@@ -624,7 +624,7 @@ impl Storage for SqliteStorage {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files WHERE path = ?1")?;
             let result = stmt
-                .query_row(params![path], |row| Self::row_to_file(row))
+                .query_row(params![path], Self::row_to_file)
                 .optional()?;
             Ok(result)
         })
@@ -633,7 +633,7 @@ impl Storage for SqliteStorage {
     fn get_all_files(&self) -> Result<Vec<FileRecord>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files ORDER BY path")?;
-            let rows = stmt.query_map([], |row| Self::row_to_file(row))?;
+            let rows = stmt.query_map([], Self::row_to_file)?;
             let mut files = Vec::new();
             for row in rows {
                 files.push(row?);
@@ -645,7 +645,7 @@ impl Storage for SqliteStorage {
     fn get_stale_files(&self, current_hashes: &HashMap<String, String>) -> Result<Vec<FileRecord>, StorageError> {
         let all = self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files ORDER BY path")?;
-            let rows = stmt.query_map([], |row| Self::row_to_file(row))?;
+            let rows = stmt.query_map([], Self::row_to_file)?;
             let mut files = Vec::new();
             for row in rows {
                 files.push(row?);
@@ -654,7 +654,7 @@ impl Storage for SqliteStorage {
         })?;
         Ok(all
             .into_iter()
-            .filter(|f| current_hashes.get(&f.path).map_or(true, |h| *h != f.content_hash))
+            .filter(|f| current_hashes.get(&f.path).is_none_or(|h| *h != f.content_hash))
             .collect())
     }
 
@@ -730,7 +730,7 @@ impl Storage for SqliteStorage {
     fn get_unresolved_by_name(&self, name: &str) -> Result<Vec<UnresolvedRef>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs WHERE reference_name = ?1")?;
-            let rows = stmt.query_map(params![name], |row| Self::row_to_unresolved_ref(row))?;
+            let rows = stmt.query_map(params![name], Self::row_to_unresolved_ref)?;
             let mut refs = Vec::new();
             for row in rows {
                 refs.push(row?);
@@ -742,7 +742,7 @@ impl Storage for SqliteStorage {
     fn get_all_unresolved_refs(&self) -> Result<Vec<UnresolvedRef>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs")?;
-            let rows = stmt.query_map([], |row| Self::row_to_unresolved_ref(row))?;
+            let rows = stmt.query_map([], Self::row_to_unresolved_ref)?;
             let mut refs = Vec::new();
             for row in rows {
                 refs.push(row?);
@@ -761,7 +761,7 @@ impl Storage for SqliteStorage {
     fn get_unresolved_refs_batch(&self, offset: u64, limit: u64) -> Result<Vec<UnresolvedRef>, StorageError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs LIMIT ?1 OFFSET ?2")?;
-            let rows = stmt.query_map(params![limit, offset], |row| Self::row_to_unresolved_ref(row))?;
+            let rows = stmt.query_map(params![limit, offset], Self::row_to_unresolved_ref)?;
             let mut refs = Vec::new();
             for row in rows {
                 refs.push(row?);
@@ -777,7 +777,7 @@ impl Storage for SqliteStorage {
             let mut stmt = conn.prepare(
                 "SELECT * FROM unresolved_refs WHERE file_path IN (SELECT value FROM json_each(?1))"
             )?;
-            let rows = stmt.query_map(params![paths_json], |row| Self::row_to_unresolved_ref(row))?;
+            let rows = stmt.query_map(params![paths_json], Self::row_to_unresolved_ref)?;
             let mut refs = Vec::new();
             for row in rows {
                 refs.push(row?);

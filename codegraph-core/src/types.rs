@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -27,35 +29,38 @@ pub enum NodeKind {
     Component,
 }
 
-impl NodeKind {
-    pub fn from_str(s: &str) -> Option<Self> {
-        Some(match s {
-            "file" => NodeKind::File,
-            "module" => NodeKind::Module,
-            "class" => NodeKind::Class,
-            "struct" => NodeKind::Struct,
-            "interface" => NodeKind::Interface,
-            "trait" => NodeKind::Trait,
-            "protocol" => NodeKind::Protocol,
-            "function" => NodeKind::Function,
-            "method" => NodeKind::Method,
-            "property" => NodeKind::Property,
-            "field" => NodeKind::Field,
-            "variable" => NodeKind::Variable,
-            "constant" => NodeKind::Constant,
-            "enum" => NodeKind::Enum,
-            "enum_member" => NodeKind::EnumMember,
-            "type_alias" => NodeKind::TypeAlias,
-            "namespace" => NodeKind::Namespace,
-            "parameter" => NodeKind::Parameter,
-            "import" => NodeKind::Import,
-            "export" => NodeKind::Export,
-            "route" => NodeKind::Route,
-            "component" => NodeKind::Component,
-            _ => return None,
-        })
+impl std::str::FromStr for NodeKind {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "file" => Ok(NodeKind::File),
+            "module" => Ok(NodeKind::Module),
+            "class" => Ok(NodeKind::Class),
+            "struct" => Ok(NodeKind::Struct),
+            "interface" => Ok(NodeKind::Interface),
+            "trait" => Ok(NodeKind::Trait),
+            "protocol" => Ok(NodeKind::Protocol),
+            "function" => Ok(NodeKind::Function),
+            "method" => Ok(NodeKind::Method),
+            "property" => Ok(NodeKind::Property),
+            "field" => Ok(NodeKind::Field),
+            "variable" => Ok(NodeKind::Variable),
+            "constant" => Ok(NodeKind::Constant),
+            "enum" => Ok(NodeKind::Enum),
+            "enum_member" => Ok(NodeKind::EnumMember),
+            "type_alias" => Ok(NodeKind::TypeAlias),
+            "namespace" => Ok(NodeKind::Namespace),
+            "parameter" => Ok(NodeKind::Parameter),
+            "import" => Ok(NodeKind::Import),
+            "export" => Ok(NodeKind::Export),
+            "route" => Ok(NodeKind::Route),
+            "component" => Ok(NodeKind::Component),
+            _ => Err(()),
+        }
     }
+}
 
+impl NodeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             NodeKind::File => "file",
@@ -101,25 +106,28 @@ pub enum EdgeKind {
     Decorates,
 }
 
-impl EdgeKind {
-    pub fn from_str(s: &str) -> Option<Self> {
-        Some(match s {
-            "contains" => EdgeKind::Contains,
-            "calls" => EdgeKind::Calls,
-            "imports" => EdgeKind::Imports,
-            "exports" => EdgeKind::Exports,
-            "extends" => EdgeKind::Extends,
-            "implements" => EdgeKind::Implements,
-            "references" => EdgeKind::References,
-            "type_of" => EdgeKind::TypeOf,
-            "returns" => EdgeKind::Returns,
-            "instantiates" => EdgeKind::Instantiates,
-            "overrides" => EdgeKind::Overrides,
-            "decorates" => EdgeKind::Decorates,
-            _ => return None,
-        })
+impl std::str::FromStr for EdgeKind {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "contains" => Ok(EdgeKind::Contains),
+            "calls" => Ok(EdgeKind::Calls),
+            "imports" => Ok(EdgeKind::Imports),
+            "exports" => Ok(EdgeKind::Exports),
+            "extends" => Ok(EdgeKind::Extends),
+            "implements" => Ok(EdgeKind::Implements),
+            "references" => Ok(EdgeKind::References),
+            "type_of" => Ok(EdgeKind::TypeOf),
+            "returns" => Ok(EdgeKind::Returns),
+            "instantiates" => Ok(EdgeKind::Instantiates),
+            "overrides" => Ok(EdgeKind::Overrides),
+            "decorates" => Ok(EdgeKind::Decorates),
+            _ => Err(()),
+        }
     }
+}
 
+impl EdgeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             EdgeKind::Contains => "contains",
@@ -166,37 +174,40 @@ pub enum Language {
     Unknown,
 }
 
-impl Language {
-    pub fn from_str(s: &str) -> Option<Self> {
-        Some(match s {
-            "typescript" => Language::TypeScript,
-            "javascript" => Language::JavaScript,
-            "tsx" => Language::Tsx,
-            "jsx" => Language::Jsx,
-            "python" => Language::Python,
-            "go" => Language::Go,
-            "rust" => Language::Rust,
-            "java" => Language::Java,
-            "c" => Language::C,
-            "cpp" => Language::Cpp,
-            "csharp" => Language::CSharp,
-            "php" => Language::Php,
-            "ruby" => Language::Ruby,
-            "swift" => Language::Swift,
-            "kotlin" => Language::Kotlin,
-            "dart" => Language::Dart,
-            "svelte" => Language::Svelte,
-            "vue" => Language::Vue,
-            "liquid" => Language::Liquid,
-            "pascal" => Language::Pascal,
-            "scala" => Language::Scala,
-            "lua" => Language::Lua,
-            "luau" => Language::Luau,
-            "unknown" => Language::Unknown,
-            _ => return None,
-        })
+impl std::str::FromStr for Language {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "typescript" => Ok(Language::TypeScript),
+            "javascript" => Ok(Language::JavaScript),
+            "tsx" => Ok(Language::Tsx),
+            "jsx" => Ok(Language::Jsx),
+            "python" => Ok(Language::Python),
+            "go" => Ok(Language::Go),
+            "rust" => Ok(Language::Rust),
+            "java" => Ok(Language::Java),
+            "c" => Ok(Language::C),
+            "cpp" => Ok(Language::Cpp),
+            "csharp" => Ok(Language::CSharp),
+            "php" => Ok(Language::Php),
+            "ruby" => Ok(Language::Ruby),
+            "swift" => Ok(Language::Swift),
+            "kotlin" => Ok(Language::Kotlin),
+            "dart" => Ok(Language::Dart),
+            "svelte" => Ok(Language::Svelte),
+            "vue" => Ok(Language::Vue),
+            "liquid" => Ok(Language::Liquid),
+            "pascal" => Ok(Language::Pascal),
+            "scala" => Ok(Language::Scala),
+            "lua" => Ok(Language::Lua),
+            "luau" => Ok(Language::Luau),
+            "unknown" => Ok(Language::Unknown),
+            _ => Err(()),
+        }
     }
+}
 
+impl Language {
     pub fn as_str(&self) -> &'static str {
         match self {
             Language::TypeScript => "typescript",
@@ -242,7 +253,7 @@ impl<'de> Deserialize<'de> for Language {
                 formatter.write_str("a language string")
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Language, E> {
-                Language::from_str(v).ok_or_else(|| E::unknown_variant(v, &[
+                Language::from_str(v).map_err(|_| E::unknown_variant(v, &[
                     "typescript", "javascript", "tsx", "jsx", "python", "go", "rust",
                     "java", "c", "cpp", "csharp", "php", "ruby", "swift", "kotlin",
                     "dart", "svelte", "vue", "liquid", "pascal", "scala", "lua", "luau", "unknown",
