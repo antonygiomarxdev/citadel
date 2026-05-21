@@ -157,9 +157,11 @@ describe('Installer targets — partial-state idempotency', () => {
     origCwd = process.cwd();
     process.chdir(tmpCwd);
     homeRestore = setHome(tmpHome);
+    process.env.XDG_CONFIG_HOME = path.join(tmpHome, '.config');
   });
 
   afterEach(() => {
+    delete process.env.XDG_CONFIG_HOME;
     homeRestore.restore();
     process.chdir(origCwd);
     fs.rmSync(tmpHome, { recursive: true, force: true });
