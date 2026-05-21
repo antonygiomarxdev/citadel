@@ -41,9 +41,9 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
-        env:
-          XDG_CONFIG_HOME: /tmp/citadel-ci-config
+        run: |
+          rm -rf ~/.config/opencode 2>/dev/null || true
+          npm test
 
   napi-build-matrix:
     name: napi-build-${{ matrix.target }}
