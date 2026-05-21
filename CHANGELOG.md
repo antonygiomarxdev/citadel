@@ -10,6 +10,9 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Rust native storage layer with napi-rs bindings**: SQLite operations (node/edge/file CRUD, FTS5 search, stats, metadata) now run in Rust via `citadel-core` and `citadel-napi` crates. The `Database` napi class exposes all storage operations through a backend-agnostic `Storage` trait, enabling future backend swapping (Rango, in-memory, etc.) without TS-side changes.
+- **Graph traversal in the Storage trait**: BFS, DFS, `findShortestPath`, `getCallers`, `getCallees`, and `getImpactRadius` have default implementations on the `Storage` trait using only CRUD primitives. Any backend gets traversal for free; backends can override for performance.
+- **Contract test suite** (`citadel-core/src/storage/contract_tests.rs`): validates any `Storage` implementation against a standardized battery of lifecycle, CRUD, search, traversal, and metadata tests.
 - **Lua**: CodeGraph now indexes Lua (`.lua`) — functions, methods (table `t.f`
   and `t:m` definitions become methods with a `t::f` receiver-qualified name),
   local variables, `require(...)` imports, and the call edges between them.

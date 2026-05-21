@@ -396,3 +396,45 @@ pub struct SchemaVersion {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TraversalDirection {
+    Outgoing,
+    Incoming,
+    #[default]
+    Both,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraversalOptions {
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
+    #[serde(default)]
+    pub edge_kinds: Vec<EdgeKind>,
+    #[serde(default)]
+    pub node_kinds: Vec<NodeKind>,
+    #[serde(default)]
+    pub direction: TraversalDirection,
+    #[serde(default = "default_traversal_limit")]
+    pub limit: usize,
+    #[serde(default = "default_true")]
+    pub include_start: bool,
+}
+
+fn default_max_depth() -> usize { 100 }
+fn default_traversal_limit() -> usize { 1000 }
+fn default_true() -> bool { true }
+
+impl Default for TraversalOptions {
+    fn default() -> Self {
+        TraversalOptions {
+            max_depth: 100,
+            edge_kinds: Vec::new(),
+            node_kinds: Vec::new(),
+            direction: TraversalDirection::Both,
+            limit: 1000,
+            include_start: true,
+        }
+    }
+}

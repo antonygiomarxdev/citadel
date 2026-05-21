@@ -1,13 +1,13 @@
 use std::str::FromStr;
 use std::sync::Mutex;
 
-use codegraph_core::storage::sqlite::SqliteStorage;
-use codegraph_core::storage::Storage;
-use codegraph_core::types::*;
+use citadel_core::storage::sqlite::SqliteStorage;
+use citadel_core::storage::Storage;
+use citadel_core::types::*;
 
 #[napi]
 pub struct Database {
-    inner: Mutex<SqliteStorage>,
+    inner: Mutex<Box<dyn Storage>>,
 }
 
 impl Default for Database {
@@ -21,8 +21,19 @@ impl Database {
     #[napi(constructor)]
     pub fn new() -> Self {
         Database {
-            inner: Mutex::new(SqliteStorage::new()),
+            inner: Mutex::new(Box::new(SqliteStorage::new())),
         }
+    }
+
+    #[napi(factory)]
+    pub fn with_backend(backend_kind: String) -> napi::Result<Self> {
+        let storage: Box<dyn Storage> = match backend_kind.as_str() {
+            "sqlite" => Box::new(SqliteStorage::new()),
+            other => return Err(napi::Error::from_reason(
+                format!("Unknown backend: {}. Supported: sqlite", other)
+            )),
+        };
+        Ok(Database { inner: Mutex::new(storage) })
     }
 
     #[napi]
@@ -238,6 +249,106 @@ impl Database {
     pub fn clear(&self) -> napi::Result<()> {
         let storage = self.inner.lock().map_err(napi_err)?;
         storage.clear().map_err(napi_err)
+    }
+
+    // ---- Graph Traversal ----
+
+    #[napi]
+    pub fn traverse_bfs(&self, start_id: String, options_json: String) -> napi::Result<String> {
+        let options: TraversalOptions = serde_json::from_str(&options_json)
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let results = storage.traverse_bfs(&start_id, &options).map_err(napi_err)?;
+        serde_json::to_string(&results).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn traverse_dfs(&self, start_id: String, options_json: String) -> napi::Result<String> {
+        let options: TraversalOptions = serde_json::from_str(&options_json)
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let results = storage.traverse_dfs(&start_id, &options).map_err(napi_err)?;
+        serde_json::to_string(&results).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn find_shortest_path(&self, from_id: String, to_id: String, edge_kinds_json: String) -> napi::Result<Option<String>> {
+        let edge_kinds: Option<Vec<EdgeKind>> = if edge_kinds_json.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_str(&edge_kinds_json)
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?)
+        };
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let path = storage.find_shortest_path(&from_id, &to_id, edge_kinds.as_deref()).map_err(napi_err)?;
+        match path {
+            Some(nodes) => serde_json::to_string(&nodes).map(Some)
+                .map_err(|e| napi::Error::from_reason(e.to_string())),
+            None => Ok(None),
+        }
+    }
+
+    #[napi]
+    pub fn get_callers(&self, node_id: String, max_depth: u32) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let callers = storage.get_callers(&node_id, max_depth).map_err(napi_err)?;
+        serde_json::to_string(&callers).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_callees(&self, node_id: String, max_depth: u32) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let callees = storage.get_callees(&node_id, max_depth).map_err(napi_err)?;
+        serde_json::to_string(&callees).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_call_graph(&self, node_id: String, depth: u32) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let graph = storage.get_call_graph(&node_id, depth).map_err(napi_err)?;
+        serde_json::to_string(&graph).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_type_hierarchy(&self, node_id: String) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let hierarchy = storage.get_type_hierarchy(&node_id).map_err(napi_err)?;
+        serde_json::to_string(&hierarchy).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn find_usages(&self, node_id: String) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let usages = storage.find_usages(&node_id).map_err(napi_err)?;
+        serde_json::to_string(&usages).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_impact_radius(&self, node_id: String, max_depth: u32) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let radius = storage.get_impact_radius(&node_id, max_depth).map_err(napi_err)?;
+        serde_json::to_string(&radius).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_ancestors(&self, node_id: String) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let ancestors = storage.get_ancestors(&node_id).map_err(napi_err)?;
+        serde_json::to_string(&ancestors).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_children(&self, node_id: String) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let children = storage.get_children(&node_id).map_err(napi_err)?;
+        serde_json::to_string(&children).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn get_node_metrics(&self, node_id: String) -> napi::Result<String> {
+        let storage = self.inner.lock().map_err(napi_err)?;
+        let metrics = storage.get_node_metrics(&node_id).map_err(napi_err)?;
+        serde_json::to_string(&metrics).map_err(|e| napi::Error::from_reason(e.to_string()))
     }
 }
 

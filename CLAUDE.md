@@ -130,6 +130,23 @@ npm publish
 
 **Do not run `npm publish`, `git push`, `git tag`, or `./scripts/release.sh` yourself** — these are publish actions on shared state. Write the file, hand the user the commands.
 
+## Rust Native Layer (Rust Core Migration)
+
+The storage layer is being migrated from TypeScript + `better-sqlite3` to Rust via `napi-rs`. The Rust code lives in the Cargo workspace:
+
+- `citadel-core/` — pure Rust library with the `Storage` trait and `SqliteStorage` implementation (rusqlite + FTS5)
+- `citadel-napi/` — napi-rs bindings crate wrapping `Box<dyn Storage>` as a `Database` napi class
+
+The `Storage` trait in `citadel-core/src/storage/mod.rs` is the **single integration point** for any backend (SQLite today, Rango in the future). It has ~50 methods covering nodes, edges, files, unresolved refs, search, stats, metadata — plus graph traversal (BFS, DFS, shortest path, callers, callees, impact radius) with default implementations that use only CRUD trait methods. Backends override defaults for performance.
+
+**Contract tests** (`citadel-core/src/storage/contract_tests.rs`) validate any `Storage` implementation against a standardized battery. If `RangoStorage` passes the contract tests, it's integrated — no other code changes needed.
+
+The napi `Database` class uses `Box<dyn Storage>` (not a concrete type), with a `Database::with_backend(kind)` factory for future-proofing. JSON strings cross the FFI boundary; Rust structs are `Serialize`/`Deserialize`.
+
+**Build pipeline**: `npm run build:napi` → compiles Rust → produces `dist/*.node`. Then `tsc` compiles TS → `dist/`. Tests: `cargo test` (Rust) + `npm test` (vitest).
+
+### Rust Backend Migration Status
+
 ## House rules
 
 - The `0.7.x` line is in active multi-agent rollout. Any change to `src/installer/` (especially `targets/`) needs corresponding test coverage and a CHANGELOG entry — installer regressions break every new install silently.

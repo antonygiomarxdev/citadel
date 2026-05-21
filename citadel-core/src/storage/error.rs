@@ -24,8 +24,4 @@ pub enum StorageError {
     InvalidArgument(String),
 }
 
-impl From<rusqlite::Error> for StorageError {
-    fn from(e: rusqlite::Error) -> Self {
-        StorageError::Database(e.to_string())
-    }
-}
+

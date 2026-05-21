@@ -4,9 +4,16 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use rusqlite::types::ToSql;
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Mutex;
 
-use super::Storage;
+use super::{Storage, FastSet, FastMap, fast_set, fast_map, NodeMetrics};
+
+impl From<rusqlite::Error> for StorageError {
+    fn from(e: rusqlite::Error) -> Self {
+        StorageError::Database(e.to_string())
+    }
+}
 
 const SCHEMA_SQL: &str = include_str!("../../../src/db/schema.sql");
 
@@ -398,7 +405,10 @@ impl Storage for SqliteStorage {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes")?;
             let rows = stmt.query_map([], Self::row_to_node)?;
-            let mut nodes = Vec::new();
+            // Pre-allocate based on a reasonable estimate: typical codebases
+            // have 1k-100k nodes. Using 4096 avoids the first few reallocations
+            // without wasting memory on tiny projects.
+            let mut nodes = Vec::with_capacity(4096);
             for row in rows {
                 nodes.push(row?);
             }
@@ -634,7 +644,9 @@ impl Storage for SqliteStorage {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files ORDER BY path")?;
             let rows = stmt.query_map([], Self::row_to_file)?;
-            let mut files = Vec::new();
+            // Pre-allocate: typical projects have 50-5000 files. 256 avoids
+            // the first few reallocations without over-committing on small repos.
+            let mut files = Vec::with_capacity(256);
             for row in rows {
                 files.push(row?);
             }
@@ -902,6 +914,169 @@ impl Storage for SqliteStorage {
             Ok(())
         })
     }
+
+    fn traverse_bfs(
+        &self,
+        start_id: &str,
+        options: &TraversalOptions,
+    ) -> Result<Vec<(Node, Vec<Edge>)>, StorageError> {
+        use std::collections::VecDeque;
+        let start_node = self.get_node_by_id(start_id)?
+            .ok_or_else(|| StorageError::NotFound(format!("start node not found: {start_id}")))?;
+
+        let mut visited: FastSet<String> = fast_set();
+        let mut queue: VecDeque<(Node, usize)> = VecDeque::new();
+        let mut results: Vec<(Node, Vec<Edge>)> = Vec::new();
+        let mut node_edges_map: FastMap<String, Vec<Edge>> = fast_map();
+
+        visited.insert(start_id.to_string());
+        queue.push_back((start_node.clone(), 0));
+
+        while let Some((current_node, depth)) = queue.pop_front() {
+            if depth > options.max_depth {
+                break;
+            }
+            if results.len() >= options.limit {
+                break;
+            }
+
+            let edges = self.with(|conn| {
+                let mut sql = String::from("SELECT id, source, target, kind, metadata, line, col, provenance FROM edges WHERE ");
+                let mut params_vec: Vec<Box<dyn ToSql>> = Vec::new();
+                match options.direction {
+                    TraversalDirection::Outgoing => {
+                        sql.push_str("source = ?");
+                        params_vec.push(Box::new(current_node.id.clone()));
+                    }
+                    TraversalDirection::Incoming => {
+                        sql.push_str("target = ?");
+                        params_vec.push(Box::new(current_node.id.clone()));
+                    }
+                    TraversalDirection::Both => {
+                        sql.push_str("(source = ? OR target = ?)");
+                        params_vec.push(Box::new(current_node.id.clone()));
+                        params_vec.push(Box::new(current_node.id.clone()));
+                    }
+                }
+                if !options.edge_kinds.is_empty() {
+                    sql.push_str(" AND kind IN (");
+                    for (i, _) in options.edge_kinds.iter().enumerate() {
+                        if i > 0 { sql.push(','); }
+                        sql.push_str(&format!("?{}", i + params_vec.len() + 1));
+                    }
+                    sql.push(')');
+                    for k in &options.edge_kinds {
+                        params_vec.push(Box::new(k.as_str().to_string()));
+                    }
+                }
+                let params_refs: Vec<&dyn ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(params_refs.as_slice(), |row| {
+                    Ok(Edge {
+                        source: row.get(1)?,
+                        target: row.get(2)?,
+                        kind: EdgeKind::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or(EdgeKind::References),
+                        metadata: row.get::<_, Option<String>>(4)?.and_then(|s| serde_json::from_str(&s).ok()),
+                        line: row.get(5)?,
+                        column: row.get(6)?,
+                        provenance: row.get(7)?,
+                    })
+                })?;
+                let mut edges = Vec::new();
+                for e in rows.flatten() {
+                    edges.push(e);
+                }
+                Ok::<_, StorageError>(edges)
+            })?;
+
+            node_edges_map.insert(current_node.id.clone(), edges.clone());
+
+            for edge in &edges {
+                let neighbor_id = if edge.source == current_node.id { &edge.target } else { &edge.source };
+                if visited.contains(neighbor_id) {
+                    continue;
+                }
+                if !options.node_kinds.is_empty()
+                    && let Some(neighbor) = self.get_node_by_id(neighbor_id)?
+                    && !options.node_kinds.contains(&neighbor.kind)
+                {
+                    continue;
+                }
+                visited.insert(neighbor_id.to_string());
+                if let Some(neighbor) = self.get_node_by_id(neighbor_id)? {
+                    queue.push_back((neighbor, depth + 1));
+                }
+            }
+
+            let include = options.include_start || current_node.id != start_id;
+            if include {
+                results.push((current_node, edges));
+            }
+        }
+
+        Ok(results)
+    }
+
+    fn get_ancestors(&self, node_id: &str) -> Result<Vec<Node>, StorageError> {
+        let mut ancestors = Vec::new();
+        let mut current_id = node_id.to_string();
+        let max_iterations = 100;
+        for _ in 0..max_iterations {
+            let parent_edges = self.with(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT e.source, n.id, n.kind, n.name, n.qualified_name, n.file_path, n.language, n.start_line, n.end_line, n.start_column, n.end_column, n.docstring, n.signature, n.visibility, n.is_exported, n.is_async, n.is_static, n.is_abstract, n.decorators, n.type_parameters, n.updated_at FROM edges e JOIN nodes n ON e.source = n.id WHERE e.target = ? AND e.kind = 'contains' LIMIT 1"
+                )?;
+                let row = stmt.query_row(params![current_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        Self::row_to_node(row)?,
+                    ))
+                }).optional()?;
+                Ok::<_, StorageError>(row)
+            })?;
+
+            if let Some((parent_id, parent_node)) = parent_edges {
+                ancestors.push(parent_node);
+                current_id = parent_id;
+            } else {
+                break;
+            }
+        }
+        Ok(ancestors)
+    }
+
+    fn get_node_metrics(&self, node_id: &str) -> Result<NodeMetrics, StorageError> {
+        let incoming = self.with(|conn| {
+            let mut stmt = conn.prepare("SELECT kind FROM edges WHERE target = ?")?;
+            let kinds: Vec<String> = stmt.query_map(params![node_id], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok::<_, StorageError>(kinds)
+        })?;
+
+        let outgoing = self.with(|conn| {
+            let mut stmt = conn.prepare("SELECT kind FROM edges WHERE source = ?")?;
+            let kinds: Vec<String> = stmt.query_map(params![node_id], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok::<_, StorageError>(kinds)
+        })?;
+
+        let call_count = incoming.iter().filter(|k| *k == "calls").count() as u32
+            + outgoing.iter().filter(|k| *k == "calls").count() as u32;
+        let caller_count = incoming.iter().filter(|k| *k == "calls").count() as u32;
+        let child_count = outgoing.iter().filter(|k| *k == "contains").count() as u32;
+        let depth = self.get_ancestors(node_id)?.len() as u32;
+
+        Ok(NodeMetrics {
+            incoming_edge_count: incoming.len() as u32,
+            outgoing_edge_count: outgoing.len() as u32,
+            call_count,
+            caller_count,
+            child_count,
+            depth,
+        })
+    }
 }
 
 impl SqliteStorage {
@@ -982,7 +1157,7 @@ impl SqliteStorage {
             })
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(fts_limit as usize);
         for row in rows {
             results.push(row.map_err(|e| StorageError::Database(e.to_string()))?);
         }
@@ -1053,7 +1228,7 @@ impl SqliteStorage {
             })
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(limit as usize);
         for row in rows {
             results.push(row.map_err(|e| StorageError::Database(e.to_string()))?);
         }
@@ -1284,5 +1459,10 @@ mod tests {
 
         storage.close().expect("should close");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_sqlite_contract() {
+        crate::storage::contract_tests::run_all(&|| Box::new(SqliteStorage::new()));
     }
 }

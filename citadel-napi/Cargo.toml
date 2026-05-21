@@ -1,5 +1,5 @@
 [package]
-name = "codegraph-napi"
+name = "citadel-napi"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2", features = ["default"] }
 napi-derive = "2"
-codegraph-core = { path = "../codegraph-core" }
+citadel-core = { path = "../citadel-core" }
 serde_json = "1"
 
 [build-dependencies]
