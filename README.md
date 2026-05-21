@@ -1,12 +1,12 @@
 <div align="center">
 
-# CodeGraph
+# Citadel
 
 ### Supercharge Claude Code, Cursor, Codex, and OpenCode with Semantic Code Intelligence
 
 **~35% cheaper · ~70% fewer tool calls · 100% local**
 
-[![npm version](https://img.shields.io/npm/v/citadel-codegraph.svg)](https://www.npmjs.com/package/citadel-codegraph)
+[![npm version](https://img.shields.io/npm/v/citadel.svg)](https://www.npmjs.com/package/citadel)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-20--24-green.svg)](https://nodejs.org/)
 [![Rust](https://img.shields.io/badge/Rust-Core-ff69b4.svg)](https://www.rust-lang.org/)
@@ -25,7 +25,7 @@
 ### Get Started
 
 ```bash
-npx citadel-codegraph
+npx citadel
 ```
 
 <sub>Interactive installer auto-configures your agent(s) — Claude Code, Cursor, Codex CLI, opencode</sub>
@@ -34,7 +34,7 @@ npx citadel-codegraph
 
 ```bash
 cd your-project
-codegraph init -i
+citadel init -i
 ```
 
 ![1_C_VYnhpys0UHrOuOgpgoyw](https://github.com/user-attachments/assets/f168182f-4d9a-44e0-94d7-08d018cc8a3a)
@@ -43,15 +43,15 @@ codegraph init -i
 
 ---
 
-## Why CodeGraph?
+## Why Citadel?
 
 When Claude Code explores a codebase, it spawns **Explore agents** that scan files with grep, glob, and Read — consuming tokens on every tool call.
 
-**CodeGraph gives those agents a pre-indexed knowledge graph** — symbol relationships, call graphs, and code structure. Agents query the graph instantly instead of scanning files.
+**Citadel gives those agents a pre-indexed knowledge graph** — symbol relationships, call graphs, and code structure. Agents query the graph instantly instead of scanning files.
 
 ### Benchmark Results
 
-Tested across **7 real-world open-source codebases** spanning 7 languages, comparing an agent (Claude Code, headless) answering one architecture question **with** and **without** CodeGraph. Each cell is the savings at the **median of 4 runs per arm**.
+Tested across **7 real-world open-source codebases** spanning 7 languages, comparing an agent (Claude Code, headless) answering one architecture question **with** and **without** Citadel. Each cell is the savings at the **median of 4 runs per arm**.
 
 > **Average: 35% cheaper · 59% fewer tokens · 49% faster · 70% fewer tool calls**
 
@@ -65,12 +65,12 @@ Tested across **7 real-world open-source codebases** spanning 7 languages, compa
 | **Gin** | Go · ~150 | 22% cheaper | 23% fewer | 34% faster | 19% fewer |
 | **Alamofire** | Swift · ~100 | 38% cheaper | 59% fewer | 51% faster | 77% fewer |
 
-The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the no-CodeGraph agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~150 files) native search is already cheap, so the margin narrows.
+The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the no-Citadel agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~150 files) native search is already cheap, so the margin narrows.
 
 <details>
 <summary><strong>Full benchmark details</strong></summary>
 
-**Methodology.** Each arm is `claude -p` (Claude Opus 4.7, Claude Code v2.1.145) run headlessly against the repo with `--strict-mcp-config`: **WITH** = CodeGraph's MCP server enabled, **WITHOUT** = an empty MCP config. Built-in Read/Grep/Bash stay available to both. Same question per repo, **4 runs per arm, median reported**. Cost = the run's `total_cost_usd`; Tokens = total tokens processed (input incl. cached + output); Time = wall-clock; Tool calls = every tool invocation, including those inside any sub-agents the model spawns. Repos cloned at `--depth 1` and indexed by the same CodeGraph build that served them.
+**Methodology.** Each arm is `claude -p` (Claude Opus 4.7, Claude Code v2.1.145) run headlessly against the repo with `--strict-mcp-config`: **WITH** = Citadel's MCP server enabled, **WITHOUT** = an empty MCP config. Built-in Read/Grep/Bash stay available to both. Same question per repo, **4 runs per arm, median reported**. Cost = the run's `total_cost_usd`; Tokens = total tokens processed (input incl. cached + output); Time = wall-clock; Tool calls = every tool invocation, including those inside any sub-agents the model spawns. Repos cloned at `--depth 1` and indexed by the same Citadel build that served them.
 
 **Queries:**
 | Codebase | Query |
@@ -94,7 +94,7 @@ The gains scale with codebase size: on large repos the agent answers from the in
 | Gin | $0.36 → $0.46 | 431k → 562k | 47s → 1m 11s | 7 → 8 |
 | Alamofire | $0.61 → $0.99 | 1.1M → 2.6M | 1m 19s → 2m 41s | 15 → 64 |
 
-**Why CodeGraph wins:** with the index available, the agent answers directly — `codegraph_context` to map the area, then one `codegraph_explore` for the relevant source — and stops, usually with zero file reads. Without it, the agent (and the Explore sub-agents it spawns) spends most of its budget on discovery (find/ls/grep) before reading the right code. CodeGraph only helps when queried *directly*, so its instructions steer agents to answer directly rather than delegate exploration to file-reading sub-agents — otherwise a sub-agent reads files regardless and CodeGraph becomes overhead.
+**Why Citadel wins:** with the index available, the agent answers directly — `citadel_context` to map the area, then one `citadel_explore` for the relevant source — and stops, usually with zero file reads. Without it, the agent (and the Explore sub-agents it spawns) spends most of its budget on discovery (find/ls/grep) before reading the right code. Citadel only helps when queried *directly*, so its instructions steer agents to answer directly rather than delegate exploration to file-reading sub-agents — otherwise a sub-agent reads files regardless and Citadel becomes overhead.
 
 </details>
 
@@ -116,7 +116,7 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 ## Rust Core Migration
 
-CodeGraph is migrating its core from TypeScript to **Rust** for maximum performance — tree-sitter parsing, graph traversal, SQLite storage, and search run natively. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to Rust via napi-rs.
+Citadel is migrating its core from TypeScript to **Rust** for maximum performance — tree-sitter parsing, graph traversal, SQLite storage, and search run natively. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to Rust via napi-rs.
 
 | What | Before (TypeScript) | After (Rust) |
 |------|-------------------|--------------|
@@ -142,7 +142,7 @@ CodeGraph is migrating its core from TypeScript to **Rust** for maximum performa
 
 ---
 
-CodeGraph detects web-framework routing files and emits `route` nodes linked by `references` edges to their handler classes or functions. Querying callers of a view/controller now surfaces the URL pattern that binds it.
+Citadel detects web-framework routing files and emits `route` nodes linked by `references` edges to their handler classes or functions. Querying callers of a view/controller now surfaces the URL pattern that binds it.
 
 | Framework | Shapes recognized |
 |---|---|
@@ -167,24 +167,24 @@ CodeGraph detects web-framework routing files and emits `route` nodes linked by 
 ### 1. Run the Installer
 
 ```bash
-npx citadel-codegraph
+npx citadel
 ```
 
 The installer will:
 - Ask which agent(s) to configure — auto-detects installed ones from: **Claude Code**, **Cursor**, **Codex CLI**, **opencode**
-- Prompt to install `codegraph` on your PATH (so agents can launch the MCP server)
+- Prompt to install `citadel` on your PATH (so agents can launch the MCP server)
 - Ask whether configs apply to all your projects or just this one
-- Write each chosen agent's MCP server config + an instructions file (e.g. `CLAUDE.md`, `.cursor/rules/codegraph.mdc`, `~/.codex/AGENTS.md`)
+- Write each chosen agent's MCP server config + an instructions file (e.g. `CLAUDE.md`, `.cursor/rules/citadel.mdc`, `~/.codex/AGENTS.md`)
 - Set up auto-allow permissions when Claude Code is one of the targets
 - Initialize your current project (local installs only)
 
 **Non-interactive (scripting / CI):**
 
 ```bash
-codegraph install --yes                              # auto-detect agents, install global
-codegraph install --target=cursor,claude --yes       # explicit target list
-codegraph install --target=auto --location=local     # detected agents, project-local
-codegraph install --print-config codex               # print snippet, no file writes
+citadel install --yes                              # auto-detect agents, install global
+citadel install --target=cursor,claude --yes       # explicit target list
+citadel install --target=auto --location=local     # detected agents, project-local
+citadel install --print-config codex               # print snippet, no file writes
 ```
 
 | Flag | Values | Default |
@@ -203,28 +203,28 @@ Restart your agent (Claude Code / Cursor / Codex CLI / opencode) for the MCP ser
 
 ```bash
 cd your-project
-codegraph init -i
+citadel init -i
 ```
 
-Builds the per-project knowledge graph index. Also wires up any project-local agent surfaces (e.g. Cursor's `.cursor/rules/codegraph.mdc`) so a single global `codegraph install` works in every project you open — no need to re-run the installer per project.
+Builds the per-project knowledge graph index. Also wires up any project-local agent surfaces (e.g. Cursor's `.cursor/rules/citadel.mdc`) so a single global `citadel install` works in every project you open — no need to re-run the installer per project.
 
-That's it — your agent will use CodeGraph tools automatically when a `.codegraph/` directory exists.
+That's it — your agent will use Citadel tools automatically when a `.citadel/` directory exists.
 
 <details>
 <summary><strong>Manual Setup (Alternative)</strong></summary>
 
 **Install globally:**
 ```bash
-npm install -g citadel-codegraph
+npm install -g citadel
 ```
 
 **Add to `~/.claude.json`:**
 ```json
 {
   "mcpServers": {
-    "codegraph": {
+    "citadel": {
       "type": "stdio",
-      "command": "codegraph",
+      "command": "citadel",
       "args": ["serve", "--mcp"]
     }
   }
@@ -236,14 +236,14 @@ npm install -g citadel-codegraph
 {
   "permissions": {
     "allow": [
-      "mcp__codegraph__codegraph_search",
-      "mcp__codegraph__codegraph_context",
-      "mcp__codegraph__codegraph_callers",
-      "mcp__codegraph__codegraph_callees",
-      "mcp__codegraph__codegraph_impact",
-      "mcp__codegraph__codegraph_node",
-      "mcp__codegraph__codegraph_status",
-      "mcp__codegraph__codegraph_files"
+      "mcp__citadel__citadel_search",
+      "mcp__citadel__citadel_context",
+      "mcp__citadel__citadel_callers",
+      "mcp__citadel__citadel_callees",
+      "mcp__citadel__citadel_impact",
+      "mcp__citadel__citadel_node",
+      "mcp__citadel__citadel_status",
+      "mcp__citadel__citadel_files"
     ]
   }
 }
@@ -257,37 +257,37 @@ npm install -g citadel-codegraph
 The installer automatically adds these instructions to `~/.claude/CLAUDE.md`:
 
 ```markdown
-## CodeGraph
+## Citadel
 
-CodeGraph builds a semantic knowledge graph of codebases for faster, smarter code exploration.
+Citadel builds a semantic knowledge graph of codebases for faster, smarter code exploration.
 
-### If `.codegraph/` exists in the project
+### If `.citadel/` exists in the project
 
-**NEVER call `codegraph_explore` or `codegraph_context` directly in the main session.** These tools return large amounts of source code that fills up main session context. Instead, ALWAYS spawn an Explore agent for any exploration question (e.g., "how does X work?", "explain the Y system", "where is Z implemented?").
+**NEVER call `citadel_explore` or `citadel_context` directly in the main session.** These tools return large amounts of source code that fills up main session context. Instead, ALWAYS spawn an Explore agent for any exploration question (e.g., "how does X work?", "explain the Y system", "where is Z implemented?").
 
 **When spawning Explore agents**, include this instruction in the prompt:
 
-> This project has CodeGraph initialized (.codegraph/ exists). Use `codegraph_explore` as your PRIMARY tool — it returns full source code sections from all relevant files in one call.
+> This project has Citadel initialized (.citadel/ exists). Use `citadel_explore` as your PRIMARY tool — it returns full source code sections from all relevant files in one call.
 >
 > **Rules:**
-> 1. Follow the explore call budget in the `codegraph_explore` tool description — it scales automatically based on project size.
-> 2. Do NOT re-read files that codegraph_explore already returned source code for. The source sections are complete and authoritative.
-> 3. Only fall back to grep/glob/read for files listed under "Additional relevant files" if you need more detail, or if codegraph returned no results.
+> 1. Follow the explore call budget in the `citadel_explore` tool description — it scales automatically based on project size.
+> 2. Do NOT re-read files that citadel_explore already returned source code for. The source sections are complete and authoritative.
+> 3. Only fall back to grep/glob/read for files listed under "Additional relevant files" if you need more detail, or if citadel returned no results.
 
 **The main session may only use these lightweight tools directly** (for targeted lookups before making edits, not for exploration):
 
 | Tool | Use For |
 |------|---------|
-| `codegraph_search` | Find symbols by name |
-| `codegraph_callers` / `codegraph_callees` | Trace call flow |
-| `codegraph_impact` | Check what's affected before editing |
-| `codegraph_node` | Get a single symbol's details |
+| `citadel_search` | Find symbols by name |
+| `citadel_callers` / `citadel_callees` | Trace call flow |
+| `citadel_impact` | Check what's affected before editing |
+| `citadel_node` | Get a single symbol's details |
 
-### If `.codegraph/` does NOT exist
+### If `.citadel/` does NOT exist
 
-At the start of a session, ask the user if they'd like to initialize CodeGraph:
+At the start of a session, ask the user if they'd like to initialize Citadel:
 
-"I notice this project doesn't have CodeGraph initialized. Would you like me to run `codegraph init -i` to build a code knowledge graph?"
+"I notice this project doesn't have Citadel initialized. Would you like me to run `citadel init -i` to build a code knowledge graph?"
 ```
 
 </details>
@@ -311,7 +311,7 @@ At the start of a session, ask the user if they'd like to initialize CodeGraph:
             │                        │
             ▼                        ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│                     CodeGraph MCP Server                          │
+│                     Citadel MCP Server                          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
 │  │   Search    │  │   Callers   │  │   Context   │               │
 │  │  "auth"     │  │  "login()"  │  │  for task   │               │
@@ -338,7 +338,7 @@ At the start of a session, ask the user if they'd like to initialize CodeGraph:
 
 1. **Extraction** — [tree-sitter](https://tree-sitter.github.io/) parses source code into ASTs. Language-specific queries extract nodes (functions, classes, methods) and edges (calls, imports, extends, implements). **Native Rust** tree-sitter replaces the WASM worker pool — no heap recycling, no serialization overhead.
 
-2. **Storage** — Everything goes into a local SQLite database (`.codegraph/codegraph.db`) with FTS5 full-text search. Powered by **rusqlite** (Rust) — no WASM fallback, no adapter layer.
+2. **Storage** — Everything goes into a local SQLite database (`.citadel/citadel.db`) with FTS5 full-text search. Powered by **rusqlite** (Rust) — no WASM fallback, no adapter layer.
 
 3. **Resolution** — After extraction, references are resolved: function calls → definitions, imports → source files, class inheritance, and framework-specific patterns. Runs in **native Rust** with concurrent name matching.
 
@@ -351,28 +351,28 @@ At the start of a session, ask the user if they'd like to initialize CodeGraph:
 ## CLI Reference
 
 ```bash
-codegraph                         # Run interactive installer
-codegraph install                 # Run installer (explicit)
-codegraph init [path]             # Initialize in a project (--index to also index)
-codegraph uninit [path]           # Remove CodeGraph from a project (--force to skip prompt)
-codegraph index [path]            # Full index (--force to re-index, --quiet for less output)
-codegraph sync [path]             # Incremental update
-codegraph status [path]           # Show statistics
-codegraph query <search>          # Search symbols (--kind, --limit, --json)
-codegraph files [path]            # Show file structure (--format, --filter, --max-depth, --json)
-codegraph context <task>          # Build context for AI (--format, --max-nodes)
-codegraph affected [files...]     # Find test files affected by changes (see below)
-codegraph serve --mcp             # Start MCP server
+citadel                         # Run interactive installer
+citadel install                 # Run installer (explicit)
+citadel init [path]             # Initialize in a project (--index to also index)
+citadel uninit [path]           # Remove Citadel from a project (--force to skip prompt)
+citadel index [path]            # Full index (--force to re-index, --quiet for less output)
+citadel sync [path]             # Incremental update
+citadel status [path]           # Show statistics
+citadel query <search>          # Search symbols (--kind, --limit, --json)
+citadel files [path]            # Show file structure (--format, --filter, --max-depth, --json)
+citadel context <task>          # Build context for AI (--format, --max-nodes)
+citadel affected [files...]     # Find test files affected by changes (see below)
+citadel serve --mcp             # Start MCP server
 ```
 
-### `codegraph affected`
+### `citadel affected`
 
 Traces import dependencies transitively to find which test files are affected by changed source files.
 
 ```bash
-codegraph affected src/utils.ts src/api.ts         # Pass files as arguments
-git diff --name-only | codegraph affected --stdin   # Pipe from git diff
-codegraph affected src/auth.ts --filter "e2e/*"     # Custom test file pattern
+citadel affected src/utils.ts src/api.ts         # Pass files as arguments
+git diff --name-only | citadel affected --stdin   # Pipe from git diff
+citadel affected src/auth.ts --filter "e2e/*"     # Custom test file pattern
 ```
 
 | Option | Description | Default |
@@ -387,7 +387,7 @@ codegraph affected src/auth.ts --filter "e2e/*"     # Custom test file pattern
 
 ```bash
 #!/usr/bin/env bash
-AFFECTED=$(git diff --name-only HEAD | codegraph affected --stdin --quiet)
+AFFECTED=$(git diff --name-only HEAD | citadel affected --stdin --quiet)
 if [ -n "$AFFECTED" ]; then
   npx vitest run $AFFECTED
 fi
@@ -397,28 +397,28 @@ fi
 
 ## MCP Tools
 
-When running as an MCP server, CodeGraph exposes these tools to Claude Code:
+When running as an MCP server, Citadel exposes these tools to Claude Code:
 
 | Tool | Purpose |
 |------|---------|
-| `codegraph_search` | Find symbols by name across the codebase |
-| `codegraph_context` | Build relevant code context for a task |
-| `codegraph_callers` | Find what calls a function |
-| `codegraph_callees` | Find what a function calls |
-| `codegraph_impact` | Analyze what code is affected by changing a symbol |
-| `codegraph_node` | Get details about a specific symbol (optionally with source code) |
-| `codegraph_files` | Get indexed file structure (faster than filesystem scanning) |
-| `codegraph_status` | Check index health and statistics |
+| `citadel_search` | Find symbols by name across the codebase |
+| `citadel_context` | Build relevant code context for a task |
+| `citadel_callers` | Find what calls a function |
+| `citadel_callees` | Find what a function calls |
+| `citadel_impact` | Analyze what code is affected by changing a symbol |
+| `citadel_node` | Get details about a specific symbol (optionally with source code) |
+| `citadel_files` | Get indexed file structure (faster than filesystem scanning) |
+| `citadel_status` | Check index health and statistics |
 
 ---
 
 ## Library Usage
 
 ```typescript
-import CodeGraph from 'citadel-codegraph';
+import Citadel from 'citadel';
 
-const cg = await CodeGraph.init('/path/to/project');
-// Or: const cg = await CodeGraph.open('/path/to/project');
+const cg = await Citadel.init('/path/to/project');
+// Or: const cg = await Citadel.open('/path/to/project');
 
 await cg.indexAll({
   onProgress: (p) => console.log(`${p.phase}: ${p.current}/${p.total}`)
@@ -438,7 +438,7 @@ cg.close();
 
 ## Configuration
 
-The `.codegraph/config.json` file controls indexing:
+The `.citadel/config.json` file controls indexing:
 
 ```json
 {
@@ -489,15 +489,15 @@ The `.codegraph/config.json` file controls indexing:
 
 ## Troubleshooting
 
-**"CodeGraph not initialized"** — Run `codegraph init` in your project directory first.
+**"Citadel not initialized"** — Run `citadel init` in your project directory first.
 
 **Indexing is slow** — Check that `node_modules` and other large directories are excluded. Use `--quiet` to reduce output overhead.
 
-**Indexing is slow / MCP `database is locked` / WASM fallback active** — `codegraph` ships with a WASM SQLite fallback for environments where `better-sqlite3` (a native module, declared as `optionalDependencies`) can't install. The fallback is 5-10x slower than the native backend and uses a journal mode that lets writers block readers, so MCP queries can also hit `database is locked` while indexing runs.
+**Indexing is slow / MCP `database is locked` / WASM fallback active** — `citadel` ships with a WASM SQLite fallback for environments where `better-sqlite3` (a native module, declared as `optionalDependencies`) can't install. The fallback is 5-10x slower than the native backend and uses a journal mode that lets writers block readers, so MCP queries can also hit `database is locked` while indexing runs.
 
 > ⚡ **Upcoming:** The Rust core migration eliminates both the WASM fallback and better-sqlite3 entirely — rusqlite with bundled SQLite is the only backend. See the [Rust Roadmap](#rust-core-migration).
 
-Run `codegraph status` and look at the `Backend:` line:
+Run `citadel status` and look at the `Backend:` line:
 
 - `Backend: native` — you're on the fast path, nothing to do.
 - `Backend: wasm` — you're on the slow fallback. Common causes: missing C build tools, prebuilt binary unavailable for your Node version, or your Node version changed after install. Fix:
@@ -519,11 +519,11 @@ Run `codegraph status` and look at the `Backend:` line:
   npm install better-sqlite3 --save
   ```
 
-  After the fix, `codegraph status` should show `Backend: native`.
+  After the fix, `citadel status` should show `Backend: native`.
 
-**MCP server not connecting** — Ensure the project is initialized/indexed, verify the path in your MCP config, and check that `codegraph serve --mcp` works from the command line.
+**MCP server not connecting** — Ensure the project is initialized/indexed, verify the path in your MCP config, and check that `citadel serve --mcp` works from the command line.
 
-**Missing symbols** — The MCP server auto-syncs on save (wait a couple seconds). Run `codegraph sync` manually if needed. Check that the file's language is supported and isn't excluded by config patterns.
+**Missing symbols** — The MCP server auto-syncs on save (wait a couple seconds). Run `citadel sync` manually if needed. Check that the file's language is supported and isn't excluded by config patterns.
 
 ## Star History
 
