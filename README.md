@@ -116,27 +116,30 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 ## Rust Core Migration
 
-Citadel is migrating its core from TypeScript to **Rust** for maximum performance — tree-sitter parsing, graph traversal, SQLite storage, and search run natively. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to Rust via napi-rs.
+Citadel's core engine now runs in **Rust** via napi-rs for maximum performance. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to native Rust.
 
 | What | Before (TypeScript) | After (Rust) |
 |------|-------------------|--------------|
-| **Parsing** | tree-sitter via WASM in worker threads, recycled every 250 files | tree-sitter native crate, no WASM overhead |
 | **Storage** | better-sqlite3 / WASM fallback (5-10x slower) | rusqlite bundled, native always |
-| **Graph ops** | Single-threaded BFS/DFS in JS | Parallel traversal with rayon |
-| **Search** | FTS5 via SQLite adapter | FTS5 + tantivy hybrid scoring |
-| **Startup** | Node.js ~50-100ms JIT warmup | Binary ~1ms cold start |
+| **Graph ops** | Single-threaded BFS/DFS in JS | Native BFS/DFS with ahash-accelerated visited sets |
+| **Search** | FTS5 via SQLite adapter | FTS5 + hybrid keyword extraction in Rust |
+| **Parsing** | tree-sitter via WASM in worker threads | tree-sitter native crate for TypeScript + Python |
+| **Context** | ContextBuilder in TypeScript | Hybrid search + graph expansion in Rust |
+| **Resolution** | Import resolver + name matcher in JS | Import resolution + name matching + 9 framework detectors in Rust |
+| **Memory** | WASM heap growth requires worker recycling | No heap issues — parsing in same thread |
 
 ### Roadmap
 
 | Phase | Slice | Status |
 |-------|-------|--------|
-| 1 | Rust workspace + napi-rs + CI | 🔜 Planned |
-| 2 | SQLite storage layer (rusqlite) | 📋 Designed |
-| 3 | Graph traversal (BFS/DFS) | 📋 Designed |
-| 4 | Tree-sitter parsing nativo | 📋 Designed |
-| 5 | Reference resolution | 📋 Designed |
-| 6 | Context builder + hybrid search | 📋 Designed |
-| 7 | Thin TS cleanup + benchmarks | 📋 Designed |
+| 1 | Rust workspace + napi-rs + CI | ✅ Complete |
+| 2 | SQLite storage layer (rusqlite) | ✅ Complete |
+| 0 | Storage Trait Hardening + Rango readiness | ✅ Complete |
+| 3 | Graph traversal (BFS/DFS) | ✅ Complete |
+| 4 | Tree-sitter parsing nativo | ✅ Complete |
+| 5 | Reference resolution | ✅ Complete |
+| 6 | Context builder + hybrid search | ✅ Complete |
+| 7 | Thin TS cleanup + benchmarks | 🔜 In progress |
 
 → [View full plan on GitHub](https://github.com/antonygiomarxdev/citadel/issues/1)
 

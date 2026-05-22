@@ -9,6 +9,17 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Complete Rust core migration**: The entire performance-critical pipeline now runs in Rust via napi-rs:
+  - **Storage**: SQLite CRUD, FTS5 search, stats, metadata — full `Storage` trait with `SqliteStorage` implementation
+  - **Graph traversal**: BFS, DFS, shortest path, callers/callees, impact radius with ahash-accelerated visited sets
+  - **Tree-sitter parsing**: TypeScript and Python extractors using native `tree-sitter` crate (no WASM, no worker threads)
+  - **Reference resolution**: Import resolver, name matcher (exact/qualified/fuzzy/instance-method), 9 framework detectors
+  - **Context builder**: Hybrid search pipeline (symbol extraction, exact/prefix/FTS5 search, graph expansion, edge recovery)
+  - **Contract tests**: Any `Storage` backend can be validated against a standardized battery of lifecycle, CRUD, search, and traversal tests
+  - **Architecture**: `citadel-core` (pure Rust library) + `citadel-napi` (JS bindings). Backend-agnostic `Storage` trait enables future Rango integration as a drop-in replacement.
+- **Renamed to Citadel**: Product, CLI, crates, and docs renamed from CodeGraph to Citadel.
+
 ### Added
 - **Rust native storage layer with napi-rs bindings**: SQLite operations (node/edge/file CRUD, FTS5 search, stats, metadata) now run in Rust via `citadel-core` and `citadel-napi` crates. The `Database` napi class exposes all storage operations through a backend-agnostic `Storage` trait, enabling future backend swapping (Rango, in-memory, etc.) without TS-side changes.
 - **Graph traversal in the Storage trait**: BFS, DFS, `findShortestPath`, `getCallers`, `getCallees`, and `getImpactRadius` have default implementations on the `Storage` trait using only CRUD primitives. Any backend gets traversal for free; backends can override for performance.
