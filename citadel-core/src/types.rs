@@ -1,9 +1,15 @@
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+use crate::constants::*;
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, EnumString, Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum NodeKind {
     File,
     Module,
@@ -19,7 +25,9 @@ pub enum NodeKind {
     Variable,
     Constant,
     Enum,
+    #[strum(serialize = "enum_member")]
     EnumMember,
+    #[strum(serialize = "type_alias")]
     TypeAlias,
     Namespace,
     Parameter,
@@ -27,37 +35,6 @@ pub enum NodeKind {
     Export,
     Route,
     Component,
-}
-
-impl std::str::FromStr for NodeKind {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "file" => Ok(NodeKind::File),
-            "module" => Ok(NodeKind::Module),
-            "class" => Ok(NodeKind::Class),
-            "struct" => Ok(NodeKind::Struct),
-            "interface" => Ok(NodeKind::Interface),
-            "trait" => Ok(NodeKind::Trait),
-            "protocol" => Ok(NodeKind::Protocol),
-            "function" => Ok(NodeKind::Function),
-            "method" => Ok(NodeKind::Method),
-            "property" => Ok(NodeKind::Property),
-            "field" => Ok(NodeKind::Field),
-            "variable" => Ok(NodeKind::Variable),
-            "constant" => Ok(NodeKind::Constant),
-            "enum" => Ok(NodeKind::Enum),
-            "enum_member" => Ok(NodeKind::EnumMember),
-            "type_alias" => Ok(NodeKind::TypeAlias),
-            "namespace" => Ok(NodeKind::Namespace),
-            "parameter" => Ok(NodeKind::Parameter),
-            "import" => Ok(NodeKind::Import),
-            "export" => Ok(NodeKind::Export),
-            "route" => Ok(NodeKind::Route),
-            "component" => Ok(NodeKind::Component),
-            _ => Err(()),
-        }
-    }
 }
 
 impl NodeKind {
@@ -89,8 +66,11 @@ impl NodeKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, EnumString, Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum EdgeKind {
     Contains,
     Calls,
@@ -99,32 +79,12 @@ pub enum EdgeKind {
     Extends,
     Implements,
     References,
+    #[strum(serialize = "type_of")]
     TypeOf,
     Returns,
     Instantiates,
     Overrides,
     Decorates,
-}
-
-impl std::str::FromStr for EdgeKind {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "contains" => Ok(EdgeKind::Contains),
-            "calls" => Ok(EdgeKind::Calls),
-            "imports" => Ok(EdgeKind::Imports),
-            "exports" => Ok(EdgeKind::Exports),
-            "extends" => Ok(EdgeKind::Extends),
-            "implements" => Ok(EdgeKind::Implements),
-            "references" => Ok(EdgeKind::References),
-            "type_of" => Ok(EdgeKind::TypeOf),
-            "returns" => Ok(EdgeKind::Returns),
-            "instantiates" => Ok(EdgeKind::Instantiates),
-            "overrides" => Ok(EdgeKind::Overrides),
-            "decorates" => Ok(EdgeKind::Decorates),
-            _ => Err(()),
-        }
-    }
 }
 
 impl EdgeKind {
@@ -146,7 +106,8 @@ impl EdgeKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, EnumString, Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum Language {
     TypeScript,
     JavaScript,
@@ -158,6 +119,7 @@ pub enum Language {
     Java,
     C,
     Cpp,
+    #[strum(serialize = "csharp")]
     CSharp,
     Php,
     Ruby,
@@ -172,39 +134,6 @@ pub enum Language {
     Lua,
     Luau,
     Unknown,
-}
-
-impl std::str::FromStr for Language {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "typescript" => Ok(Language::TypeScript),
-            "javascript" => Ok(Language::JavaScript),
-            "tsx" => Ok(Language::Tsx),
-            "jsx" => Ok(Language::Jsx),
-            "python" => Ok(Language::Python),
-            "go" => Ok(Language::Go),
-            "rust" => Ok(Language::Rust),
-            "java" => Ok(Language::Java),
-            "c" => Ok(Language::C),
-            "cpp" => Ok(Language::Cpp),
-            "csharp" => Ok(Language::CSharp),
-            "php" => Ok(Language::Php),
-            "ruby" => Ok(Language::Ruby),
-            "swift" => Ok(Language::Swift),
-            "kotlin" => Ok(Language::Kotlin),
-            "dart" => Ok(Language::Dart),
-            "svelte" => Ok(Language::Svelte),
-            "vue" => Ok(Language::Vue),
-            "liquid" => Ok(Language::Liquid),
-            "pascal" => Ok(Language::Pascal),
-            "scala" => Ok(Language::Scala),
-            "lua" => Ok(Language::Lua),
-            "luau" => Ok(Language::Luau),
-            "unknown" => Ok(Language::Unknown),
-            _ => Err(()),
-        }
-    }
 }
 
 impl Language {
@@ -236,11 +165,80 @@ impl Language {
             Language::Unknown => "unknown",
         }
     }
+
+    pub fn file_extensions(&self) -> &[&str] {
+        match self {
+            Language::TypeScript => &[".ts"],
+            Language::JavaScript => &[".js", ".mjs", ".cjs"],
+            Language::Tsx => &[".tsx"],
+            Language::Jsx => &[".jsx"],
+            Language::Python => &[".py", ".pyi", ".pyx"],
+            Language::Go => &[".go"],
+            Language::Rust => &[".rs"],
+            Language::Java => &[".java"],
+            Language::C => &[".c", ".h"],
+            Language::Cpp => &[".cpp", ".cc", ".hpp", ".hxx"],
+            Language::CSharp => &[".cs"],
+            Language::Php => &[".php"],
+            Language::Ruby => &[".rb"],
+            Language::Swift => &[".swift"],
+            Language::Kotlin => &[".kt", ".kts"],
+            Language::Dart => &[".dart"],
+            Language::Svelte => &[".svelte"],
+            Language::Vue => &[".vue"],
+            Language::Liquid => &[".liquid"],
+            Language::Pascal => &[".pas", ".pp"],
+            Language::Scala => &[".scala", ".sc"],
+            Language::Lua => &[".lua"],
+            Language::Luau => &[".luau"],
+            Language::Unknown => &[],
+        }
+    }
+
+    /// Detect language from a file extension (including leading dot).
+    pub fn from_extension(ext: &str) -> Option<Language> {
+        let ext_lower = ext.to_lowercase();
+        for lang in Language::all() {
+            if lang.file_extensions().contains(&ext_lower.as_str()) {
+                return Some(lang.clone());
+            }
+        }
+        None
+    }
+
+    /// All concrete languages (excludes Unknown).
+    pub fn all() -> &'static [Language] {
+        &[
+            Language::TypeScript,
+            Language::JavaScript,
+            Language::Tsx,
+            Language::Jsx,
+            Language::Python,
+            Language::Go,
+            Language::Rust,
+            Language::Java,
+            Language::C,
+            Language::Cpp,
+            Language::CSharp,
+            Language::Php,
+            Language::Ruby,
+            Language::Swift,
+            Language::Kotlin,
+            Language::Dart,
+            Language::Svelte,
+            Language::Vue,
+            Language::Liquid,
+            Language::Pascal,
+            Language::Scala,
+            Language::Lua,
+            Language::Luau,
+        ]
+    }
 }
 
 impl Serialize for Language {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -249,15 +247,18 @@ impl<'de> Deserialize<'de> for Language {
         struct LanguageVisitor;
         impl<'de> serde::de::Visitor<'de> for LanguageVisitor {
             type Value = Language;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a language string")
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a language string")
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Language, E> {
-                Language::from_str(v).map_err(|_| E::unknown_variant(v, &[
-                    "typescript", "javascript", "tsx", "jsx", "python", "go", "rust",
-                    "java", "c", "cpp", "csharp", "php", "ruby", "swift", "kotlin",
-                    "dart", "svelte", "vue", "liquid", "pascal", "scala", "lua", "luau", "unknown",
-                ]))
+                Language::from_str(v).map_err(|_| {
+                    static VALID: &[&str] = &[
+                        "typescript", "javascript", "tsx", "jsx", "python", "go", "rust",
+                        "java", "c", "cpp", "csharp", "php", "ruby", "swift", "kotlin",
+                        "dart", "svelte", "vue", "liquid", "pascal", "scala", "lua", "luau", "unknown",
+                    ];
+                    E::unknown_variant(v, VALID)
+                })
             }
         }
         deserializer.deserialize_str(LanguageVisitor)
@@ -328,10 +329,37 @@ pub struct FileRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionError {
     pub message: String,
+    pub kind: ExtractionErrorKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtractionErrorKind {
+    ParseError,
+    UnsupportedSyntax,
+    FatalPanic,
+    StackOverflow,
+    InvalidSpan,
+    TreeSitterError,
+    Other,
+}
+
+impl ExtractionErrorKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ExtractionErrorKind::ParseError => "parse_error",
+            ExtractionErrorKind::UnsupportedSyntax => "unsupported_syntax",
+            ExtractionErrorKind::FatalPanic => "fatal_panic",
+            ExtractionErrorKind::StackOverflow => "stack_overflow",
+            ExtractionErrorKind::InvalidSpan => "invalid_span",
+            ExtractionErrorKind::TreeSitterError => "tree_sitter_error",
+            ExtractionErrorKind::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -369,13 +397,15 @@ pub struct SearchOptions {
     pub include_patterns: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude_patterns: Option<Vec<String>>,
-    #[serde(default = "default_limit")]
+    #[serde(default = "default_search_limit")]
     pub limit: usize,
     #[serde(default)]
     pub offset: usize,
 }
 
-fn default_limit() -> usize { 50 }
+fn default_search_limit() -> usize {
+    DEFAULT_SEARCH_LIMIT
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphStats {
@@ -418,22 +448,28 @@ pub struct TraversalOptions {
     pub direction: TraversalDirection,
     #[serde(default = "default_traversal_limit")]
     pub limit: usize,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_include_start")]
     pub include_start: bool,
 }
 
-fn default_max_depth() -> usize { 100 }
-fn default_traversal_limit() -> usize { 1000 }
-fn default_true() -> bool { true }
+fn default_max_depth() -> usize {
+    DEFAULT_MAX_DEPTH
+}
+fn default_traversal_limit() -> usize {
+    DEFAULT_TRAVERSAL_LIMIT
+}
+fn default_include_start() -> bool {
+    true
+}
 
 impl Default for TraversalOptions {
     fn default() -> Self {
         TraversalOptions {
-            max_depth: 100,
+            max_depth: DEFAULT_MAX_DEPTH,
             edge_kinds: Vec::new(),
             node_kinds: Vec::new(),
             direction: TraversalDirection::Both,
-            limit: 1000,
+            limit: DEFAULT_TRAVERSAL_LIMIT,
             include_start: true,
         }
     }

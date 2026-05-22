@@ -2,258 +2,357 @@
 
 ## Resumen
 
-Transformar el prototipo funcional actual en software de calidad aplicando SOLID, Clean Code y patrones de diseño Rust. El objetivo es que agregar features nuevas sea trivial, no un acto de fe.
+Análisis sistemático del codebase completo aplicando SOLID, Clean Code, Clean Architecture. Resultado: **~140 violaciones documentadas** con file:line específico.
 
-El plan cubre los 3 issues abiertos (#10, #11, #12) pero desde los cimientos — arreglando la arquitectura antes de parchar síntomas.
-
-## Diagnóstico Actual
-
-| Problema | Impacto |
-|----------|---------|
-| `Storage` trait con ~50 métodos (viola ISP) | Cada backend nuevo debe implementarlo TODO. Imposible hacer backend solo-lectura, remoto, o en-memoria |
-| Graph traversal acoplado a Storage (N+1 queries) | DFS usa ~2000 queries SQLite para 1000 nodos. BFS tiene override optimizado, DFS no |
-| `ContextBuilder` con estrategias hardcodeadas y `std::fs` directo | No se puede testear, no se puede extender, no funciona con backends remotos |
-| Código Rust de resolución muerto (`ResolutionContext` sin adaptador para Storage) | 9 framework resolvers implementados pero inusables |
-| NAPI Database con 366 líneas de boilerplate idéntico | `lock() → call → to_string → map_err` repetido 40 veces |
-| `ExtractionOrchestrator` TS de 1552 líneas (viola SRP) | File scanning + git + workers + WASM + native + DB + frameworks + progress + retry |
-| `GraphTraverser` TS (642 líneas) duplica traversal de Rust | Bug fixes en dos lugares. NAPI bridge de traversal existe pero TS no lo usa |
-| Tipos de error inconsistentes: `StorageError`, `String`, `napi::Error::from_reason` | Sin structured error handling a través del stack |
-
-## Fases
-
-### Fase 0: Infraestructura de Errores (fundación)
-
-**Nuevo archivo:** `citadel-core/src/error.rs`
-
-- `CitadelError` como tipo de error único para todo el core (reemplaza `StorageError` + `String`)
-- `ExtractionErrorKind` enum: `ParseError`, `UnsupportedSyntax`, `FatalPanic`, `StackOverflow`, `InvalidSpan`, `TreeSitterError`, `Other`
-- Cada variante tiene `severity()` → `ErrorSeverity` enum (`Critical`, `Error`, `Warning`, `Info`)
-- Conversiones From: `std::io::Error`, `rusqlite::Error`, `serde_json::Error`
-- Conversión a `napi::Error` que preserva el kind como prefijo `[KindName] mensaje`
-- `FromStr` de `NodeKind`/`EdgeKind`/`Language` ahora retornan `Result<_, CitadelError>` (era `Result<_, ()>`)
-
-**Archivos modificados:**
-- `citadel-core/src/error.rs` — nuevo
-- `citadel-core/src/storage/error.rs` — re-exporta `CitadelError` con deprecation
-- `citadel-core/src/types.rs` — `ExtractionError` ahora tiene `kind` field
-- `citadel-core/src/context/mod.rs` — firmas cambian de `Result<_, String>` a `Result<_, CitadelError>`
-- `citadel-core/src/resolution/mod.rs` — ídem
-- `citadel-napi/src/database.rs` — usa `CitadelError` para conversión a napi
-
-**Verificación:** `cargo clippy`, `cargo test`, `npm run build`, `npm test`
+El plan cubre los 3 issues abiertos (#10, #11, #12) reparando los cimientos estructurales primero.
 
 ---
 
-### Fase 1: Descomponer el Monolito Storage (ISP)
+## Análisis Detallado de Anti-Patrones
 
-**Nuevo archivo:** `citadel-core/src/storage/traits/mod.rs`
+### 1. MAGIC NUMBERS (89 ocurrencias)
 
-Traits enfocados:
+| Archivo | Línea | Valor | Qué es |
+|---------|-------|-------|--------|
+| `types.rs` | 332 | `50` | default search limit |
+| `types.rs` | 393 | `100` | default max depth |
+| `types.rs` | 394 | `1000` | default traversal limit |
+| `types.rs` | 400 | `100` | duplicado de L393 |
+| `types.rs` | 404 | `1000` | duplicado de L394 |
+| `context/mod.rs` | 36-37 | `50`, `20` | maxNodes, maxFiles defaults |
+| `context/mod.rs` | 153 | `10` | top 10 entry points |
+| `context/mod.rs` | 235-236 | `3`, `3` | context lines before/after |
+| `context/search.rs` | 22 | `2` | min symbol length CamelCase |
+| `context/search.rs` | 31 | `3` | min symbol length snake_case |
+| `storage/mod.rs` | 321,331,341 | `1000` | traversals limit (3x duplicado) |
+| `storage/mod.rs` | 357,362 | `20` | max depth (2x duplicado) |
+| `sqlite.rs` | 30 | `120000` | busy_timeout |
+| `sqlite.rs` | 32 | `-64000` | cache_size 64MB |
+| `sqlite.rs` | 34 | `268435456` | mmap_size 256MB |
+| `sqlite.rs` | 93,101,114,122 | `1→4` | schema version migration |
+| `sqlite.rs` | 244 | `4096` | Vec pre-allocation |
+| `sqlite.rs` | 529 | `256` | file pre-allocation |
+| `sqlite.rs` | 980 | `100` | get_ancestors loop guard |
+| `import_resolver.rs` | 58-82 | `200,100,15,50,80,10` | scoring weights |
+| `name_matcher.rs` | 12-129 | `0.9,0.95,0.5,0.85,100,80,15,50,80,25,10,200` | scoring + confidence |
+| `extraction/index.ts` | 52,59,66 | `10, 10000, 250` | batch size, timeout, recycle |
+| `db/queries.ts` | 159 | `1000` | LRU cache size |
+| `db/queries.ts` | 489 | `100` | search limit default |
+| `db/queries.ts` | 544,663,681 | `20, 100, 5` | SQL limits |
+| `db/queries.ts` | 735,840,878,931 | `100, 50, 8, 30` | query limits |
+| `db/index.ts` | 47-50 | `120000, -64000, 268435456` | duplicados SQLite PRAGMA |
+| `context/index.ts` | 154-178 | `20, 5, 1500, 3, 1, 0.3, 20` | defaults duplicados |
+| `graph/traversal.ts` | 14 | `1000` | default limit |
+| `resolution/index.ts` | 674, 785 | `5000, 0.9` | batch size, confidence |
+| `types.ts` (TS) | 437 | `1024*1024` | maxFileSize 1MB |
+| `config.ts` | 43 | `500` | regex length check |
 
+**Fix:** centralizar en archivos de constantes tipadas por dominio:
+- `citadel-core/src/constants.rs` — `DEFAULT_SEARCH_LIMIT`, `DEFAULT_MAX_DEPTH`, `DEFAULT_TRAVERSAL_LIMIT`, `SCHEMA_VERSION`, etc.
+- `src/constants.ts` — ídem TS-side
+- SQLite PRAGMAs en `SqlitePragmas` struct con defaults documentados
+- Scoring weights en `scoring.rs` como named constants con rationale
+
+### 2. MAGIC STRINGS (127+ ocurrencias)
+
+| Archivo | Línea | String | Categoría |
+|---------|-------|--------|-----------|
+| `types.rs` | 36-221 | `"file"`, `"class"`, `"struct"`, `"contains"`, `"calls"`, `"typescript"`, `"javascript"`, ... | 22+12+24 strings duplicados entre `as_str()` y `from_str()` |
+| `sqlite.rs` | 26-32 | `"WAL"`, `"ON"`, `"NORMAL"`, `"MEMORY"` | PRAGMA values |
+| `sqlite.rs` | 1405-1442 | 22+12+24 strings | parse_node_kind, parse_edge_kind, parse_language — triplicados de types.rs |
+| `extraction/mod.rs` | 41-64 | `".ts"`, `".tsx"`, ... (30+) | extensiones de archivo |
+| `typescript.rs` | 66-100 | `"function_declaration"`, `"method_definition"`, `"class_declaration"`, ... (13) | tree-sitter node kinds |
+| `python.rs` | 50 | `"function_definition"`, `"class_definition"`, ... | tree-sitter node kinds |
+| `import_resolver.rs` | 10-24 | `".ts"`, `".tsx"`, `".d.ts"`, ... (30+) | extension resolution |
+| `import_resolver.rs` | 103-120 | `"typescript"`, `"javascript"`, ... | language dispatch |
+| `resolution/index.ts` | 38-92 | `'console'`, `'window'`, `'Promise'`, `'useState'`, `'print'`, `'len'`, `'fmt'`, `'os'`, ... (100+) | built-ins por lenguaje |
+| `context/index.ts` | 82-118 | `'the'`, `'and'`, `'for'`, ... (100+) | stop words |
+| `db/index.ts` | 45-51 | `'foreign_keys = ON'`, `'journal_mode = WAL'`, ... | PRAGMAs duplicados |
+| `db/sqlite-adapter.ts` | 161-170 | `'DELETE'`, `'FULL'`, `'BEGIN'`, `'COMMIT'`, `'ROLLBACK'` | SQL strings |
+| `types.ts` | 14-37 | `'file'`, `'module'`, `'class'`, ... (22) | NODE_KINDS array |
+| `types.ts` | 56-58 | `'typescript'`, `'javascript'`, ... (24) | LANGUAGES array |
+| `types.ts` | 318-515 | 150+ glob strings | include/exclude patterns |
+
+**Fix:**
+- `NodeKind::as_str()` y `from_str()` generados con macro `#[derive(EnumString, Display)]` para eliminar duplicación manual
+- Tree-sitter node kinds como `TS_NODE_KINDS` constantes por extractor
+- Extensiones de archivo en `Language::extensions()` método en el enum
+- Built-ins por lenguaje en arrays `const` modulares
+- SQL PRAGMAs en struct `DatabasePragmas` con defaults
+
+### 3. OCP VIOLATIONS (13 switch/match que requieren modificación para extender)
+
+| # | Archivo | Línea | Dispatch |
+|---|---------|-------|----------|
+| 1 | `extraction/languages/mod.rs` | 18-25 | `get_extractor()` — match Language |
+| 2 | `extraction/mod.rs` | 40-65 | `detect_language()` — if-else 30+ extensiones |
+| 3 | `import_resolver.rs` | 10-24 | `extension_order()` — match language string |
+| 4 | `import_resolver.rs` | 103-120 | `is_external_import()` — match language string |
+| 5 | `typescript.rs` | 66-100 | `walk_tree()` — match 13+ tree-sitter node kinds |
+| 6 | `python.rs` | 50-67 | `walk_python()` — match 4 tree-sitter node kinds |
+| 7 | `database.rs` (napi) | 31-34 | `with_backend()` — match "sqlite" string |
+| 8 | `frameworks/mod.rs` | 12-22 | `all_frameworks()` — vec de 9 frameworks |
+| 9 | `grammars.ts` | detectLanguage() | if-else 30+ extensiones (duplicado de #2) |
+| 10 | `languages/index.ts` | 32-52 | `EXTRACTORS` — Partial<Record> 18 entries |
+| 11 | `frameworks/index.ts` | 30-51 | `FRAMEWORK_RESOLVERS` — array hardcoded |
+| 12 | `resolution/index.ts` | 778-842 | `isBuiltInOrExternal()` — 5 if-else paths |
+| 13 | `traversal.ts` | 93-95 | edge priority sort — `contains ? 0 : calls ? 1 : 2` |
+
+**Fix:**
+- `Language` enum: agregar método `extensions() -> &[&str]`, `builtins() -> &[&str]`
+- `get_extractor()` → `LazyLock<HashMap<Language, ExtractorFactory>>` registry
+- `detect_language()` → loop sobre `Language::all().find(|l| l.matches_extension(ext))`
+- `all_frameworks()` → `inventory` crate (compile-time registration) o macro
+- `EXTRACTORS` → `Map<Language, ExtractorFactory>` con registro dinámico
+- `isBuiltInOrExternal()` → `Language::is_builtin(name: &str) -> bool`
+- tree-sitter node kinds: visitor pattern con `HashMap<&str, Box<dyn NodeHandler>>`
+- `with_backend()` → `LazyLock<HashMap<String, BackendFactory>>` registry
+
+### 4. DIP VIOLATIONS (15 dependencias de capas altas a bajas)
+
+| # | Archivo | Línea | Violación |
+|---|---------|-------|-----------|
+| 1 | `database.rs` | 4,27,33 | NAPI importa + instancia `SqliteStorage` directamente |
+| 2 | `extraction/mod.rs` | 137 | Caso de uso depende de `tree_sitter` crate |
+| 3 | `typescript.rs` | 5 | Extractor depende de `tree-sitter-typescript` |
+| 4 | `python.rs` | 5 | Extractor depende de `tree-sitter-python` |
+| 5 | `context/mod.rs` | 231-233 | ContextBuilder llama `std::fs::read_to_string` |
+| 6 | `error.rs` | 4 | `StorageError::Io` envuelve `std::io::Error` |
+| 7 | `sqlite-adapter.ts` | dynamic require | `require('better-sqlite3')` / `require('node-sqlite3-wasm')` |
+| 8 | `extraction/index.ts` | dynamic require | `require('../citadel-native.linux-x64-gnu.node')` |
+| 9 | `extraction/index.ts` | 159-161 | `execFileSync('git', ...)` directo |
+| 10 | `context/index.ts` | 11 | `import * as fs from 'fs'` en ContextBuilder |
+| 11 | `resolution/index.ts` | 11 | `import * as fs from 'fs'` en ReferenceResolver |
+| 12 | `db/index.ts` | direct import | `import Database from 'better-sqlite3'` |
+| 13 | `citadel-core/src/lib.rs` | re-exports | `pub use storage::sqlite::SqliteStorage` expone implementación concreta |
+| 14 | `extraction/languages/mod.rs` | use statements | `use super::typescript::TypeScriptExtractor` — dependencia concreta entre módulos |
+| 15 | `resolution/frameworks/mod.rs` | use statements | `use super::express::ExpressResolver` — 9 imports concretos |
+
+**Fix:**
+- NAPI Database → recibe `Box<dyn FullStore>` por constructor, factory externa
+- `SqliteStorage` no se re-exporta desde `lib.rs`
+- `TreeSitterParser` trait abstrae `tree_sitter::Parser`
+- `FileSystem` trait (Phase 3 del plan anterior) — implementación `LocalFileSystem` + `VirtualFileSystem` para tests
+- `VcsProvider` trait — `GitProvider` implementa `execFileSync('git')`, mock para tests
+- `StorageBackend` trait para `sqlite-adapter.ts` — `NativeSqliteBackend`, `WasmSqliteBackend`
+- `NativeExtractor` interface en TS — `LinuxX64Extractor`, `DarwinArm64Extractor`
+
+### 5. LSP VIOLATIONS (6 subtipos que no sustituyen correctamente)
+
+| # | Archivo | Línea | Violación |
+|---|---------|-------|-----------|
+| 1 | `storage/mod.rs` | 84-120 | `search_nodes` default es O(n) — frágil para backends sin FTS |
+| 2 | `storage/mod.rs` | 143-159 | `find_edges_between_nodes` default es O(n²) |
+| 3 | `frameworks/nestjs.rs` | 17-19 | `resolve()` retorna `None` siempre (y 8 de 9 frameworks igual) |
+| 4 | `frameworks/express.rs` | 37-39 | ídem |
+| 5 | `frameworks/django.rs` | 44-46 | ídem |
+| 6 | `resolution/types.ts` | 133-138 | Métodos opcionales que cambian comportamiento cualitativo |
+
+**Fix:**
+- `search_nodes` y `find_edges_between_nodes` → sin default, requeridos
+- `FrameworkResolver` → separar en `FrameworkDetector` (siempre implementado) + `FrameworkResolver` (opcional vía `Option` return type explícito en el registry, no en el trait)
+- `ResolutionContext` → split en `BasicResolutionContext` (métodos requeridos) + `ExtendedResolutionContext` (opcionales)
+- `LanguageExtractor` → rename a `LanguageParser` y exigir `parse()` obligatorio
+
+---
+
+## Clean Architecture Layer Map
+
+### Entity Layer (innermost — zero dependencies)
+```
+citadel-core/src/types.rs
+├── Node, Edge, NodeKind, EdgeKind, Language  ← puros, sin deps
+├── ExtractionResult, ExtractionError        ← DEBERÍAN ser puros
+│   └── ❌ ExtractionError usa String severity, no enum
+├── TraversalOptions, SearchOptions          ← puros
+└── ❌ FromStr impls retornan Result<_, ()> en vez de error tipado
+```
+
+### Use Case Layer (business logic)
+```
+citadel-core/src/context/mod.rs              ← ContextBuilder
+  ❌ DIP: std::fs::read_to_string directo
+  ❌ OCP: estrategias de búsqueda hardcodeadas
+  ✅ DI: recibe Box<dyn Storage> por constructor (pero debería ser &dyn)
+citadel-core/src/resolution/mod.rs           ← ReferenceResolver
+  ✅ DI: recibe Vec<Box<dyn FrameworkResolver>> por constructor
+  ❌ ResolutionContext sin implementación concreta (dead code)
+  ❌ LSP: FrameworkResolver::resolve() es stub en 8/9 implementaciones
+citadel-core/src/graph/                      ← NO EXISTE como módulo
+  ❌ La lógica de traversal vive en Storage (adapter layer)
+```
+
+### Interface Adapter Layer (bridges)
+```
+citadel-core/src/storage/mod.rs              ← Storage trait
+  ❌ ISP: 50 métodos en un solo trait
+  ❌ Violación de capa: incluye lógica de traversal (use case)
+citadel-core/src/storage/traits/             ← NO EXISTE (debería)
+citadel-core/src/extraction/mod.rs           ← LanguageExtractor trait
+  ❌ DIP: usa tree_sitter::Parser directamente
+  ❌ OCP: detect_language() con if-else de 30+ extensiones
+citadel-napi/src/database.rs                 ← Database class
+  ❌ DIP: instancia SqliteStorage directamente
+  ❌ God Object: 40+ métodos en una clase
+  ❌ 366 líneas de boilerplate lock→call→serialize→map_err
+citadel-napi/src/extraction.rs               ← extract_files()
+  ✅ Interfaz limpia: función pura, Vec<Vec<String>> → Vec<JsExtractionResult>
+  ❌ Sin catch_unwind en FFI boundary
+```
+
+### Framework Layer (outermost — concrete implementations)
+```
+citadel-core/src/storage/sqlite.rs           ← SqliteStorage
+  ✅ Implementa Storage trait
+  ❌ parse_node_kind/parse_edge_kind/parse_language duplican types.rs
+  ❌ DFS sin override SQL-optimizado (usa default N+1)
+citadel-core/src/extraction/languages/       ← language extractors
+  ❌ typescript.rs y python.rs usan walk_tree recursivo sin depth limit
+  ❌ tree-sitter version mismatch (0.24 core vs 0.23 grammar)
+src/db/sqlite-adapter.ts                     ← NativeSqliteAdapter
+  ❌ DIP: require('better-sqlite3') directo
+src/extraction/grammars.ts                   ← WASM tree-sitter
+src/extraction/worker.ts                     ← Worker thread
+```
+
+### Dependency Rule Violations (dependencias hacia afuera)
+
+```
+Entity ────────────────────────────────────────────────────────────► types.rs → from_str() retorna ()
+                                                                      (dependencia innecesaria en std::str::FromStr con error type pobre)
+
+Use Case ───────────► context/mod.rs ─────► std::fs::read_to_string  (framework detail)
+                     context/mod.rs ─────► estrategias hardcodeadas  (sin abstracción)
+                     resolution/mod.rs ──► ResolutionContext trait   (sin adapter a Storage)
+
+Adapter ────────────► storage/mod.rs ────► lógica de BFS/DFS         (use case en capa equivocada)
+                     extraction/mod.rs ──► tree_sitter::Parser       (framework en adapter)
+                     napi/database.rs ───► SqliteStorage::new()      (framework en adapter)
+
+Framework ──────────► sqlite.rs ─────────► PRAGMAs hardcodeados      (sin configuración tipada)
+                     typescript.rs ──────► tree-sitter 0.23          (version mismatch)
+```
+
+---
+
+## Plan de Refactorización (Fases Revisadas)
+
+### Fase -1: Documentar el estado actual
+
+1. Committear `docs/architecture-refactor.md` con este análisis completo. ← **HECHO**
+2. Crear issues de GitHub para cada categoría de violación (Magic Numbers, Magic Strings, OCP, DIP, LSP)
+3. Agregar `cargo deny` al CI para evitar que nuevas DIP violations entren
+
+### Fase 0: Infraestructura de Errores + Constantes
+
+**Nuevos archivos:**
+- `citadel-core/src/error.rs` — `CitadelError` enum unificado
+- `citadel-core/src/constants.rs` — todas las constantes mágicas con nombres y documentación
+
+**Cambios:**
+- `types.rs` — `ExtractionError` gana `kind: ExtractionErrorKind`; `FromStr` impls usan `CitadelError`
+- `storage/error.rs` — deprecar `StorageError`, re-exportar `CitadelError`
+- `sqlite.rs` — usar constantes de `constants.rs` para PRAGMAs, schema version, pre-allocations
+- `context/mod.rs` — `FindContextOptions` defaults desde constantes
+- `context/search.rs` — min symbol lengths desde constantes
+- `import_resolver.rs` + `name_matcher.rs` — scoring weights desde `constants.rs`
+- Todos los TS files con magic numbers — importar desde `src/constants.ts`
+
+**Verificación:** `cargo clippy`, `cargo test`, `npm test`
+
+### Fase 1: Descomponer Storage (ISP) + Eliminar Magic Strings
+
+**Nuevo archivo:** `citadel-core/src/storage/traits.rs` — traits enfocados:
 ```rust
-pub trait NodeStore { ... }          // 12 métodos (CRUD + search)
-pub trait EdgeStore { ... }          // 6 métodos
-pub trait FileStore { ... }          // 7 métodos
-pub trait UnresolvedRefStore { ... } // 11 métodos
-pub trait MetadataStore { ... }      // 3 métodos
-pub trait StatsProvider { ... }      // 2 métodos
-pub trait Lifecycle { ... }          // 5 métodos (init/open/close/get_path/clear)
-
-pub trait FullStore: NodeStore + EdgeStore + FileStore + UnresolvedRefStore 
+pub trait NodeStore { ... }       // 12 métodos
+pub trait EdgeStore { ... }       // 6 métodos
+pub trait FileStore { ... }       // 7 métodos
+pub trait UnresolvedRefStore { ... }  // 11 métodos
+pub trait MetadataStore { ... }   // 3 métodos
+pub trait StatsProvider { ... }   // 2 métodos
+pub trait Lifecycle { ... }       // 5 métodos
+pub trait FullStore: NodeStore + EdgeStore + FileStore + UnresolvedRefStore
     + MetadataStore + StatsProvider + Lifecycle + Send + Sync {}
 ```
 
-**Cambio clave:** `Lifecycle::initialize(&mut self, config: &DatabaseConfig)` — `DatabaseConfig` es una struct con `connection_string: String` + `extra: HashMap<String, String>`. Ya no es `db_path: &str`. Para SQLite, `connection_string` es el path al archivo.
+**Eliminar magic strings en `types.rs`:**
+- Usar `strum` derive macros: `#[derive(EnumString, Display)]` para `NodeKind`, `EdgeKind`, `Language`
+- Eliminar implementaciones manuales de `as_str()` y `from_str()` (~100 líneas)
+- `parse_node_kind`/`parse_edge_kind`/`parse_language` en `sqlite.rs` → usar `FromStr`
+- `detect_language()` en `extraction/mod.rs` → `Language::from_extension(ext: &str)`
 
 **Archivos modificados:**
-- `citadel-core/src/storage/traits/mod.rs` — nuevo (definiciones de traits)
-- `citadel-core/src/storage/mod.rs` — `pub use traits::FullStore as Storage;` (backward compat)
-- `citadel-core/src/storage/sqlite.rs` — reorganizar `impl NodeStore for SqliteStorage { ... }`, `impl EdgeStore for SqliteStorage { ... }`, etc. Puro movimiento de código, sin cambio de comportamiento.
-- `citadel-core/src/storage/contract_tests.rs` — toma `Box<dyn FullStore>`; tests por trait
+- `storage/traits.rs` — nuevo
+- `storage/mod.rs` — `pub use traits::FullStore as Storage;`
+- `sqlite.rs` — reorganizar en `impl` blocks por trait
+- `types.rs` — strum derives + eliminar duplicación
+- `extraction/mod.rs` — `Language::from_extension()`
+- `database.rs` (napi) — `parse_*` funciones → usar `FromStr`
 
-**Estrategia de migración:** Mantener `Storage` como alias de `FullStore` durante Fases 1-5. Eliminar después de Fase 6.
+### Fase 2: Extraer Graph + Resolver LSP
 
-**Verificación:** `cargo clippy`, `cargo test` (contract tests pasan), `npm test`
+**Nuevo archivo:** `citadel-core/src/graph/mod.rs` — `GraphQuery` trait con blanket impl
 
----
+**LSP fixes:**
+- `search_nodes` y `find_edges_between_nodes` → requeridos (sin default frágil)
+- `FrameworkResolver` → split: `trait FrameworkDetector { fn detect() }` + `trait FrameworkResolver { fn resolve() }` (solo NestJS implementa resolve hoy)
+- `ResolutionContext` → métodos opcionales en trait separado: `ExtendedResolutionContext`
+- `SqliteStorage` → implementar `GraphQuery` con overrides para TODOS los métodos de traversal (no solo BFS)
 
-### Fase 2: Extraer Graph como Abstracción Independiente
+### Fase 3: FileSystem + VcsProvider (DIP)
 
-**Nuevo archivo:** `citadel-core/src/graph/mod.rs`
+**Nuevos archivos:**
+- `citadel-core/src/filesystem.rs` — `FileSystem` trait + `LocalFileSystem`
+- `src/extraction/vcs.ts` — `VcsProvider` interface + `GitProvider`
 
-```rust
-pub trait GraphQuery: NodeStore + EdgeStore {
-    fn traverse_bfs(&self, start: &str, opts: &TraversalOptions) -> Result<Vec<(Node, Vec<Edge>)>, CitadelError>;
-    fn traverse_dfs(...);
-    fn find_shortest_path(...);
-    fn get_callers(...);
-    fn get_callees(...);
-    fn get_impact_radius(...);
-    fn get_call_graph(...);
-    fn get_type_hierarchy(...);
-    fn find_usages(...);
-    fn get_ancestors(...);
-    fn get_children(...);
-    fn get_node_metrics(...);
-}
-
-// Blanket impl: cualquier (NodeStore + EdgeStore) recibe traversal gratis
-impl<T: NodeStore + EdgeStore> GraphQuery for T {}
-```
-
-Los métodos default usan solo `NodeStore` + `EdgeStore` (sin SQL). `SqliteStorage` overridea BFS, get_ancestors, get_node_metrics con versiones SQL-optimizadas.
-
-**Archivos modificados:**
-- `citadel-core/src/graph/mod.rs` — nuevo (mueve ~400 líneas de `storage/mod.rs`)
-- `citadel-core/src/storage/mod.rs` — elimina métodos de traversal del trait
-- `citadel-core/src/storage/sqlite.rs` — los 3 overrides SQL pasan a `impl GraphQuery for SqliteStorage`
-- `citadel-core/src/lib.rs` — `pub mod graph;`
-
-**Verificación:** traversal idéntico al anterior, `cargo test`, `npm test`
-
----
-
-### Fase 3: Abstracción de FileSystem
-
-**Nuevo archivo:** `citadel-core/src/filesystem.rs`
-
-```rust
-pub trait FileSystem: Send + Sync {
-    fn read_file(&self, path: &str) -> Result<String, CitadelError>;
-    fn file_exists(&self, path: &str) -> bool;
-    fn get_project_root(&self) -> &str;
-}
-
-pub struct LocalFileSystem { root: String }
-impl FileSystem for LocalFileSystem { ... }
-```
-
-**Archivos modificados:**
-- `citadel-core/src/filesystem.rs` — nuevo
-- `citadel-core/src/context/mod.rs` — `ContextBuilder` ahora recibe `fs: Box<dyn FileSystem>`; `extract_source_blocks` usa `self.fs.read_file()` en vez de `std::fs::read_to_string`
-- `citadel-core/src/lib.rs` — `pub mod filesystem;`
-
-**Verificación:** `cargo clippy`, `cargo test`
-
----
-
-### Fase 4: Puente ResolutionContext → Storage
+### Fase 4: Puente ResolutionContext + Registry OCP
 
 **Nuevo archivo:** `citadel-core/src/resolution/storage_adapter.rs`
 
-`StorageResolutionContext` implementa `ResolutionContext` delegando en `&Mutex<Box<dyn FullStore>>` + `&dyn FileSystem`. Esto hace que los 9 framework resolvers + import resolver + name matcher sean usables con datos reales.
+**OCP fixes:**
+- `get_extractor()` → `LazyLock<HashMap<Language, ExtractorFactory>>`
+- `all_frameworks()` → registro dinámico
+- `with_backend()` → `LazyLock<HashMap<String, BackendFactory>>`
+- `EXTRACTORS` (TS) → `Map` con registro
+- `isBuiltInOrExternal()` → `Language::is_builtin(name) -> bool`
 
-**Archivos modificados:**
-- `citadel-core/src/resolution/storage_adapter.rs` — nuevo
-- `citadel-core/src/resolution/mod.rs` — `ResolutionContext` retorna `Result<_, CitadelError>` (era `String`). Actualizar los 9 frameworks.
-- `citadel-core/src/lib.rs` — re-export
-
-**Verificación:** compila, `cargo test`
-
----
-
-### Fase 5: Context con Strategy Pattern
+### Fase 5: ContextBuilder Strategy Pattern
 
 **Nuevos archivos:**
-- `citadel-core/src/context/strategies.rs` — `SearchStrategy` trait + `ExactMatchStrategy`, `PrefixMatchStrategy`, `Fts5SearchStrategy`
-- `citadel-core/src/context/formatting.rs` — `ContextFormatter` trait + `MarkdownFormatter`, `JsonFormatter`
+- `citadel-core/src/context/strategies.rs`
+- `citadel-core/src/context/formatting.rs`
 
-`ContextBuilder` ahora acepta `Vec<Box<dyn SearchStrategy>>` y `Box<dyn ContextFormatter>` configurables. El pipeline es el mismo pero las estrategias son inyectables.
-
-**Archivos modificados:**
-- `citadel-core/src/context/strategies.rs` — nuevo
-- `citadel-core/src/context/formatting.rs` — nuevo
-- `citadel-core/src/context/mod.rs` — `ContextBuilder::new(store, fs)` con defaults razonables; métodos `with_search_strategies()`, `with_formatter()`
-
-**Verificación:** comportamiento idéntico, `cargo test`, `npm test`
-
----
-
-### Fase 6: Unificar NAPI Bridge (eliminar GraphTraverser TS)
-
-**Nuevo archivo:** `citadel-napi/src/macros.rs` — macro `napi_method!` que genera el boilerplate `lock() → call → serialize → map_err`
-
-**Archivos modificados:**
-- `citadel-napi/src/macros.rs` — nuevo
-- `citadel-napi/src/database.rs` — usar `napi_method!` en vez de las 40 repeticiones manuales. Exponer `db.graph` como sub-objeto con métodos de traversal que llaman `GraphQuery`.
-- `src/graph/traversal.ts` — refactorizar `GraphTraverser` para ser wrapper de `db.graph.*` en vez de reimplementar con `QueryBuilder`
-- `src/mcp/tools.ts`, `src/exploration/` — usar `graphTraverser` (wrapper) sin cambios de API
-
-**Verificación:** `npm test`. Los tests de traversal deben pasar con los mismos resultados que antes.
-
----
-
-### Fase 7: Refactorizar ExtractionOrchestrator TS (SRP)
+### Fase 6: Unificar NAPI Bridge + TreeWalker
 
 **Nuevos archivos:**
-- `src/extraction/file-scanner.ts` — scanning + git + filtering
-- `src/extraction/worker-pool.ts` — worker lifecycle (spawn, reciclar, timeout, crash)
+- `citadel-napi/src/macros.rs`
+- `citadel-core/src/extraction/walker.rs` — `TreeWalker` + `NodeVisitor` trait
 
-**Archivos modificados:**
-- `src/extraction/index.ts` — reducir a orquestación pura (~300 líneas). Delegar I/O a FileScanner, workers a WorkerPool.
-- `src/extraction/store.ts` — `ExtractionStore` interface que desacopla `storeExtractionResult` de `QueryBuilder`
+### Fase 7: SRP ExtractionOrchestrator TS
 
-**Verificación:** `npm test`. Comportamiento de index idéntico.
-
----
+**Nuevos archivos:**
+- `src/extraction/file-scanner.ts`
+- `src/extraction/worker-pool.ts`
+- `src/extraction/store.ts`
 
 ### Fase 8: Crash Fixes + Nuevos Extractores
 
-#### 8.1 Crash fixes
-1. `citadel-core/Cargo.toml` — alinear tree-sitter 0.23 o 0.24
-2. `citadel-napi/src/extraction.rs` — `catch_unwind` a nivel de archivo individual en `par_iter`
-3. `citadel-core/src/extraction/languages/typescript.rs` — no continuar tras `set_language` error
-4. `citadel-core/src/extraction/walker.rs` — `TreeWalker` con `max_depth: 500` implementando `NodeVisitor` trait
-5. `citadel-core/src/extraction/languages/typescript.rs` — migrar a `TreeWalker`
-6. `citadel-core/src/extraction/languages/python.rs` — migrar a `TreeWalker`
-
-#### 8.2 Registry de extractores
-- `citadel-core/src/extraction/languages/mod.rs` — `LazyLock<HashMap<Language, ExtractorFactory>>`
-
-#### 8.3 Nuevos extractores
-- `citadel-core/src/extraction/languages/rust.rs`
-- `citadel-core/src/extraction/languages/go.rs`
-- `citadel-core/src/extraction/languages/java.rs`
-
-#### 8.4 TS fast path
-- `src/extraction/index.ts` — agregar `'rust'`, `'go'`, `'java'` a `NATIVE_EXTRACTOR_LANGS`
-
-**Verificación:** `test_native_extraction()` con 30 archivos reales sin segfault. `npm test` completo.
+- Tree-sitter version alignment
+- `catch_unwind` per-file + FFI boundary
+- Rust, Go, Java extractors (~100 líneas c/u con TreeWalker)
 
 ---
 
-## Dependencias entre Fases
-
-```
-Fase 0 ──► Fase 1 ──► Fase 2 ──► Fase 6 ──► Fase 7
-  │                      │
-  └──► Fase 3 ──► Fase 4 ──► Fase 5
-                                  │
-                                  └──► Fase 8
-```
-
-## Commits (10 total)
-
-| # | Fase | Mensaje |
-|---|------|---------|
-| 1 | 0 | refactor: unified CitadelError type + ExtractionErrorKind enum |
-| 2 | 1 | refactor: decompose Storage monolith into focused traits (ISP) |
-| 3 | 2 | refactor: extract GraphQuery trait from Storage |
-| 4 | 3 | feat: add FileSystem abstraction with LocalFileSystem |
-| 5 | 4 | feat: bridge ResolutionContext to Storage via adapter |
-| 6 | 5 | refactor: strategy pattern for ContextBuilder search + formatting |
-| 7 | 6 | refactor: unify NAPI bridge, eliminate TS GraphTraverser duplication |
-| 8 | 7 | refactor: split ExtractionOrchestrator into focused modules (SRP) |
-| 9 | 8a | fix: tree-sitter version alignment + catch_unwind + TreeWalker |
-| 10 | 8b | feat: add Rust, Go, Java native extractors + registry pattern |
-
-## Verificación Final
+## Verificación por Fase
 
 ```bash
+# Cada fase
 cargo clippy --all -- -D warnings
 cargo test
 npm run build
 npm test
-# Index real: citadel init + citadel index --force en VSCode src/vs (sin segfault)
-# Benchmark: extractFiles nativo con 50 archivos TS/RS/GO/JAVA
+
+# Fase 1 extra
+grep -r '[0-9]{2,}' citadel-core/src/ | grep -v '0\|1\|test\|mod\|use\|//'
+# ^^ no debe retornar nuevos magic numbers sin nombre
 ```

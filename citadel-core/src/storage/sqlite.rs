@@ -1,4 +1,3 @@
-use crate::storage::error::StorageError;
 use crate::types::*;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use rusqlite::types::ToSql;
@@ -7,13 +6,9 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
 
-use super::{Storage, FastSet, FastMap, fast_set, fast_map, NodeMetrics};
-
-impl From<rusqlite::Error> for StorageError {
-    fn from(e: rusqlite::Error) -> Self {
-        StorageError::Database(e.to_string())
-    }
-}
+use super::{FastSet, FastMap, fast_set, fast_map, NodeMetrics};
+use super::traits::*;
+use crate::error::CitadelError;
 
 const SCHEMA_SQL: &str = include_str!("../../../src/db/schema.sql");
 
@@ -43,34 +38,34 @@ impl SqliteStorage {
         }
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, StorageInner>, StorageError> {
-        self.inner.lock().map_err(|e| StorageError::Database(e.to_string()))
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, StorageInner>, CitadelError> {
+        self.inner.lock().map_err(|e| CitadelError::Database(e.to_string()))
     }
 
-    fn with<F, T>(&self, f: F) -> Result<T, StorageError>
+    fn with<F, T>(&self, f: F) -> Result<T, CitadelError>
     where
-        F: FnOnce(&Connection) -> Result<T, StorageError>,
+        F: FnOnce(&Connection) -> Result<T, CitadelError>,
     {
         let guard = self.lock()?;
-        let conn = guard.conn.as_ref().ok_or_else(|| StorageError::NotInitialized("database not opened".into()))?;
+        let conn = guard.conn.as_ref().ok_or_else(|| CitadelError::NotInitialized("database not opened".into()))?;
         f(conn)
     }
 
-    fn apply_pragmas(conn: &Connection, _is_wal_allowed: bool) -> Result<(), StorageError> {
+    fn apply_pragmas(conn: &Connection, _is_wal_allowed: bool) -> Result<(), CitadelError> {
         for (pragma, _is_wal) in PRAGMAS {
             conn.execute_batch(pragma)?;
         }
         Ok(())
     }
 
-    fn get_schema_version(conn: &Connection) -> Result<i32, StorageError> {
+    fn get_schema_version(conn: &Connection) -> Result<i32, CitadelError> {
         let count: i32 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_versions'",
                 [],
                 |row| row.get(0),
             )
-            .map_err(|e: rusqlite::Error| StorageError::Database(e.to_string()))?;
+            .map_err(|e: rusqlite::Error| CitadelError::Database(e.to_string()))?;
 
         if count == 0 {
             return Ok(0);
@@ -81,21 +76,21 @@ impl SqliteStorage {
             [],
             |row| row.get(0),
         )
-        .map_err(|e| StorageError::Database(e.to_string()))
+        .map_err(|e| CitadelError::Database(e.to_string()))
     }
 
-    fn run_schema(conn: &Connection) -> Result<(), StorageError> {
+    fn run_schema(conn: &Connection) -> Result<(), CitadelError> {
         conn.execute_batch(SCHEMA_SQL)
-            .map_err(|e| StorageError::Database(e.to_string()))?;
+            .map_err(|e| CitadelError::Database(e.to_string()))?;
         conn.execute(
             "UPDATE schema_versions SET version = 4, description = 'schema (current)' WHERE version = 1",
             [],
         )
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| CitadelError::Database(e.to_string()))?;
         Ok(())
     }
 
-    fn run_migrations(conn: &Connection, from_version: i32) -> Result<(), StorageError> {
+    fn run_migrations(conn: &Connection, from_version: i32) -> Result<(), CitadelError> {
         if from_version < 2 {
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS project_metadata (
@@ -109,40 +104,40 @@ impl SqliteStorage {
                 CREATE INDEX IF NOT EXISTS idx_unresolved_file_path ON unresolved_refs(file_path);
                 CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);",
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
             conn.execute(
                 "INSERT INTO schema_versions (version, description) VALUES (2, 'add project_metadata + provenance')",
                 [],
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
         }
         if from_version < 3 {
             conn.execute_batch(
                 "CREATE INDEX IF NOT EXISTS idx_nodes_lower_name ON nodes(lower(name));",
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
             conn.execute(
                 "INSERT INTO schema_versions (version, description) VALUES (3, 'add lower(name) index')",
                 [],
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
         }
         if from_version < 4 {
             conn.execute_batch(
                 "DROP INDEX IF EXISTS idx_edges_source;
                  DROP INDEX IF EXISTS idx_edges_target;",
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
             conn.execute(
                 "INSERT INTO schema_versions (version, description) VALUES (4, 'drop redundant edge indexes')",
                 [],
             )
-            .map_err(|e| StorageError::Migration(e.to_string()))?;
+            .map_err(|e| CitadelError::Migration(e.to_string()))?;
         }
         Ok(())
     }
 
-    fn insert_node_tx(tx: &Transaction, node: &Node) -> Result<(), StorageError> {
+    fn insert_node_tx(tx: &Transaction, node: &Node) -> Result<(), CitadelError> {
         tx.execute(
             "INSERT OR REPLACE INTO nodes (
                 id, kind, name, qualified_name, file_path, language,
@@ -180,7 +175,7 @@ impl SqliteStorage {
                 node.updated_at,
             ],
         )
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| CitadelError::Database(e.to_string()))?;
         Ok(())
     }
 
@@ -264,23 +259,23 @@ impl Default for SqliteStorage {
     }
 }
 
-impl Storage for SqliteStorage {
-    fn initialize(&mut self, db_path: &str) -> Result<(), StorageError> {
+impl Lifecycle for SqliteStorage {
+    fn initialize(&mut self, db_path: &str) -> Result<(), CitadelError> {
         if let Some(parent) = Path::new(db_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
         Self::apply_pragmas(&conn, true)?;
         Self::run_schema(&conn)?;
-        let mut guard = self.inner.lock().map_err(|e| StorageError::Database(e.to_string()))?;
+        let mut guard = self.inner.lock().map_err(|e| CitadelError::Database(e.to_string()))?;
         guard.conn = Some(conn);
         guard.path = Some(db_path.to_string());
         Ok(())
     }
 
-    fn open(&mut self, db_path: &str) -> Result<(), StorageError> {
+    fn open(&mut self, db_path: &str) -> Result<(), CitadelError> {
         if !Path::new(db_path).exists() {
-            return Err(StorageError::NotFound(format!("database file not found: {}", db_path)));
+            return Err(CitadelError::NotFound(format!("database file not found: {}", db_path)));
         }
         let conn = Connection::open(db_path)?;
         Self::apply_pragmas(&conn, true)?;
@@ -288,14 +283,14 @@ impl Storage for SqliteStorage {
         if current_version > 0 && current_version < 4 {
             Self::run_migrations(&conn, current_version)?;
         }
-        let mut guard = self.inner.lock().map_err(|e| StorageError::Database(e.to_string()))?;
+        let mut guard = self.inner.lock().map_err(|e| CitadelError::Database(e.to_string()))?;
         guard.conn = Some(conn);
         guard.path = Some(db_path.to_string());
         Ok(())
     }
 
-    fn close(&mut self) -> Result<(), StorageError> {
-        let mut guard = self.inner.lock().map_err(|e| StorageError::Database(e.to_string()))?;
+    fn close(&mut self) -> Result<(), CitadelError> {
+        let mut guard = self.inner.lock().map_err(|e| CitadelError::Database(e.to_string()))?;
         guard.conn = None;
         guard.path = None;
         Ok(())
@@ -305,9 +300,20 @@ impl Storage for SqliteStorage {
         self.lock().ok().and_then(|g| g.path.clone())
     }
 
+    fn clear(&self) -> Result<(), CitadelError> {
+        self.with(|conn| {
+            conn.execute_batch(
+                "DELETE FROM nodes; DELETE FROM edges; DELETE FROM files; DELETE FROM unresolved_refs;",
+            )?;
+            Ok(())
+        })
+    }
+}
+
+impl NodeStore for SqliteStorage {
     // ---- Nodes ----
 
-    fn insert_node(&self, node: &Node) -> Result<(), StorageError> {
+    fn insert_node(&self, node: &Node) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             Self::insert_node_tx(&tx, node)?;
@@ -316,7 +322,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn insert_nodes(&self, nodes: &[Node]) -> Result<(), StorageError> {
+    fn insert_nodes(&self, nodes: &[Node]) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             for node in nodes {
@@ -327,7 +333,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn update_node(&self, node: &Node) -> Result<(), StorageError> {
+    fn update_node(&self, node: &Node) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute(
                 "UPDATE nodes SET
@@ -353,21 +359,21 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn delete_node(&self, id: &str) -> Result<(), StorageError> {
+    fn delete_node(&self, id: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute("DELETE FROM nodes WHERE id = ?1", params![id])?;
             Ok(())
         })
     }
 
-    fn delete_nodes_by_file(&self, file_path: &str) -> Result<(), StorageError> {
+    fn delete_nodes_by_file(&self, file_path: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute("DELETE FROM nodes WHERE file_path = ?1", params![file_path])?;
             Ok(())
         })
     }
 
-    fn get_node_by_id(&self, id: &str) -> Result<Option<Node>, StorageError> {
+    fn get_node_by_id(&self, id: &str) -> Result<Option<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE id = ?1")?;
             let result = stmt
@@ -377,7 +383,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_nodes_by_file(&self, file_path: &str) -> Result<Vec<Node>, StorageError> {
+    fn get_nodes_by_file(&self, file_path: &str) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE file_path = ?1 ORDER BY start_line")?;
             let rows = stmt.query_map(params![file_path], Self::row_to_node)?;
@@ -389,7 +395,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_nodes_by_kind(&self, kind: &NodeKind) -> Result<Vec<Node>, StorageError> {
+    fn get_nodes_by_kind(&self, kind: &NodeKind) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE kind = ?1")?;
             let rows = stmt.query_map(params![kind.as_str()], Self::row_to_node)?;
@@ -401,7 +407,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_all_nodes(&self) -> Result<Vec<Node>, StorageError> {
+    fn get_all_nodes(&self) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes")?;
             let rows = stmt.query_map([], Self::row_to_node)?;
@@ -416,7 +422,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_nodes_by_name(&self, name: &str) -> Result<Vec<Node>, StorageError> {
+    fn get_nodes_by_name(&self, name: &str) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE name = ?1")?;
             let rows = stmt.query_map(params![name], Self::row_to_node)?;
@@ -428,7 +434,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_nodes_by_qualified_name(&self, qn: &str) -> Result<Vec<Node>, StorageError> {
+    fn get_nodes_by_qualified_name(&self, qn: &str) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE qualified_name = ?1")?;
             let rows = stmt.query_map(params![qn], Self::row_to_node)?;
@@ -440,7 +446,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_nodes_by_lower_name(&self, name: &str) -> Result<Vec<Node>, StorageError> {
+    fn get_nodes_by_lower_name(&self, name: &str) -> Result<Vec<Node>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM nodes WHERE lower(name) = lower(?1)")?;
             let rows = stmt.query_map(params![name], Self::row_to_node)?;
@@ -454,7 +460,7 @@ impl Storage for SqliteStorage {
 
     // ---- Search ----
 
-    fn search_nodes(&self, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, StorageError> {
+    fn search_nodes(&self, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, CitadelError> {
         self.with(|conn| {
             let trimmed = query.trim();
             if !trimmed.is_empty() {
@@ -472,10 +478,12 @@ impl Storage for SqliteStorage {
             self.filter_search(conn, options)
         })
     }
+}
 
+impl EdgeStore for SqliteStorage {
     // ---- Edges ----
 
-    fn insert_edge(&self, edge: &Edge) -> Result<(), StorageError> {
+    fn insert_edge(&self, edge: &Edge) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute(
                 "INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance)
@@ -494,7 +502,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn insert_edges(&self, edges: &[Edge]) -> Result<(), StorageError> {
+    fn insert_edges(&self, edges: &[Edge]) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             for edge in edges {
@@ -513,14 +521,14 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn delete_edges_by_source(&self, source_id: &str) -> Result<(), StorageError> {
+    fn delete_edges_by_source(&self, source_id: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute("DELETE FROM edges WHERE source = ?1", params![source_id])?;
             Ok(())
         })
     }
 
-    fn get_outgoing_edges(&self, source_id: &str, kinds: Option<&[EdgeKind]>, provenance: Option<&str>) -> Result<Vec<Edge>, StorageError> {
+    fn get_outgoing_edges(&self, source_id: &str, kinds: Option<&[EdgeKind]>, provenance: Option<&str>) -> Result<Vec<Edge>, CitadelError> {
         self.with(|conn| {
             let mut sql = String::from("SELECT * FROM edges WHERE source = ?");
             let mut param_values: Vec<Box<dyn ToSql>> = vec![Box::new(source_id.to_string())];
@@ -546,7 +554,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_incoming_edges(&self, target_id: &str, kinds: Option<&[EdgeKind]>) -> Result<Vec<Edge>, StorageError> {
+    fn get_incoming_edges(&self, target_id: &str, kinds: Option<&[EdgeKind]>) -> Result<Vec<Edge>, CitadelError> {
         self.with(|conn| {
             let mut sql = String::from("SELECT * FROM edges WHERE target = ?");
             let mut param_values: Vec<Box<dyn ToSql>> = vec![Box::new(target_id.to_string())];
@@ -567,10 +575,10 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn find_edges_between_nodes(&self, node_ids: &[String], kinds: Option<&[EdgeKind]>) -> Result<Vec<Edge>, StorageError> {
+    fn find_edges_between_nodes(&self, node_ids: &[String], kinds: Option<&[EdgeKind]>) -> Result<Vec<Edge>, CitadelError> {
         self.with(|conn| {
             let ids_json = serde_json::to_string(node_ids)
-                .map_err(|e| StorageError::Serialization(e.to_string()))?;
+                .map_err(|e| CitadelError::Serialization(e.to_string()))?;
 
             let mut sql = String::from(
                 "SELECT * FROM edges WHERE source IN (SELECT value FROM json_each(?)) \
@@ -596,10 +604,12 @@ impl Storage for SqliteStorage {
             Ok(edges)
         })
     }
+}
 
+impl FileStore for SqliteStorage {
     // ---- Files ----
 
-    fn upsert_file(&self, file: &FileRecord) -> Result<(), StorageError> {
+    fn upsert_file(&self, file: &FileRecord) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute(
                 "INSERT INTO files (path, content_hash, language, size, modified_at, indexed_at, node_count, errors)
@@ -620,7 +630,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn delete_file(&self, path: &str) -> Result<(), StorageError> {
+    fn delete_file(&self, path: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             tx.execute("DELETE FROM nodes WHERE file_path = ?1", params![path])?;
@@ -630,7 +640,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_file_by_path(&self, path: &str) -> Result<Option<FileRecord>, StorageError> {
+    fn get_file_by_path(&self, path: &str) -> Result<Option<FileRecord>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files WHERE path = ?1")?;
             let result = stmt
@@ -640,7 +650,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_all_files(&self) -> Result<Vec<FileRecord>, StorageError> {
+    fn get_all_files(&self) -> Result<Vec<FileRecord>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files ORDER BY path")?;
             let rows = stmt.query_map([], Self::row_to_file)?;
@@ -654,7 +664,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_stale_files(&self, current_hashes: &HashMap<String, String>) -> Result<Vec<FileRecord>, StorageError> {
+    fn get_stale_files(&self, current_hashes: &HashMap<String, String>) -> Result<Vec<FileRecord>, CitadelError> {
         let all = self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM files ORDER BY path")?;
             let rows = stmt.query_map([], Self::row_to_file)?;
@@ -670,7 +680,7 @@ impl Storage for SqliteStorage {
             .collect())
     }
 
-    fn get_all_file_paths(&self) -> Result<Vec<String>, StorageError> {
+    fn get_all_file_paths(&self) -> Result<Vec<String>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT path FROM files ORDER BY path")?;
             let paths = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -682,7 +692,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_all_node_names(&self) -> Result<Vec<String>, StorageError> {
+    fn get_all_node_names(&self) -> Result<Vec<String>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT DISTINCT name FROM nodes")?;
             let names = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -693,10 +703,12 @@ impl Storage for SqliteStorage {
             Ok(result)
         })
     }
+}
 
+impl UnresolvedRefStore for SqliteStorage {
     // ---- Unresolved refs ----
 
-    fn insert_unresolved_ref(&self, r#ref: &UnresolvedRef) -> Result<(), StorageError> {
+    fn insert_unresolved_ref(&self, r#ref: &UnresolvedRef) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute(
                 "INSERT INTO unresolved_refs (from_node_id, reference_name, reference_kind, line, col, candidates, file_path, language)
@@ -712,7 +724,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn insert_unresolved_refs_batch(&self, refs: &[UnresolvedRef]) -> Result<(), StorageError> {
+    fn insert_unresolved_refs_batch(&self, refs: &[UnresolvedRef]) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             for r in refs {
@@ -732,14 +744,14 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn delete_unresolved_by_node(&self, node_id: &str) -> Result<(), StorageError> {
+    fn delete_unresolved_by_node(&self, node_id: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute("DELETE FROM unresolved_refs WHERE from_node_id = ?1", params![node_id])?;
             Ok(())
         })
     }
 
-    fn get_unresolved_by_name(&self, name: &str) -> Result<Vec<UnresolvedRef>, StorageError> {
+    fn get_unresolved_by_name(&self, name: &str) -> Result<Vec<UnresolvedRef>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs WHERE reference_name = ?1")?;
             let rows = stmt.query_map(params![name], Self::row_to_unresolved_ref)?;
@@ -751,7 +763,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_all_unresolved_refs(&self) -> Result<Vec<UnresolvedRef>, StorageError> {
+    fn get_all_unresolved_refs(&self) -> Result<Vec<UnresolvedRef>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs")?;
             let rows = stmt.query_map([], Self::row_to_unresolved_ref)?;
@@ -763,14 +775,14 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_unresolved_refs_count(&self) -> Result<u64, StorageError> {
+    fn get_unresolved_refs_count(&self) -> Result<u64, CitadelError> {
         self.with(|conn| {
             let count: u64 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |row| row.get(0))?;
             Ok(count)
         })
     }
 
-    fn get_unresolved_refs_batch(&self, offset: u64, limit: u64) -> Result<Vec<UnresolvedRef>, StorageError> {
+    fn get_unresolved_refs_batch(&self, offset: u64, limit: u64) -> Result<Vec<UnresolvedRef>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT * FROM unresolved_refs LIMIT ?1 OFFSET ?2")?;
             let rows = stmt.query_map(params![limit, offset], Self::row_to_unresolved_ref)?;
@@ -782,10 +794,10 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_unresolved_refs_by_files(&self, file_paths: &[String]) -> Result<Vec<UnresolvedRef>, StorageError> {
+    fn get_unresolved_refs_by_files(&self, file_paths: &[String]) -> Result<Vec<UnresolvedRef>, CitadelError> {
         self.with(|conn| {
             let paths_json = serde_json::to_string(file_paths)
-                .map_err(|e| StorageError::Serialization(e.to_string()))?;
+                .map_err(|e| CitadelError::Serialization(e.to_string()))?;
             let mut stmt = conn.prepare(
                 "SELECT * FROM unresolved_refs WHERE file_path IN (SELECT value FROM json_each(?1))"
             )?;
@@ -798,17 +810,17 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn clear_unresolved_refs(&self) -> Result<(), StorageError> {
+    fn clear_unresolved_refs(&self) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute("DELETE FROM unresolved_refs", [])?;
             Ok(())
         })
     }
 
-    fn delete_resolved_refs(&self, from_node_ids: &[String]) -> Result<(), StorageError> {
+    fn delete_resolved_refs(&self, from_node_ids: &[String]) -> Result<(), CitadelError> {
         self.with(|conn| {
             let ids_json = serde_json::to_string(from_node_ids)
-                .map_err(|e| StorageError::Serialization(e.to_string()))?;
+                .map_err(|e| CitadelError::Serialization(e.to_string()))?;
             conn.execute(
                 "DELETE FROM unresolved_refs WHERE from_node_id IN (SELECT value FROM json_each(?1))",
                 params![ids_json],
@@ -817,7 +829,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn delete_specific_resolved_refs(&self, refs: &[UnresolvedRef]) -> Result<(), StorageError> {
+    fn delete_specific_resolved_refs(&self, refs: &[UnresolvedRef]) -> Result<(), CitadelError> {
         self.with(|conn| {
             let tx = conn.unchecked_transaction()?;
             for r in refs {
@@ -830,10 +842,12 @@ impl Storage for SqliteStorage {
             Ok(())
         })
     }
+}
 
+impl StatsProvider for SqliteStorage {
     // ---- Stats & Metadata ----
 
-    fn get_stats(&self) -> Result<GraphStats, StorageError> {
+    fn get_stats(&self) -> Result<GraphStats, CitadelError> {
         self.with(|conn| {
             let (node_count, edge_count, file_count): (u64, u64, u64) = conn
                 .query_row(
@@ -871,8 +885,10 @@ impl Storage for SqliteStorage {
             })
         })
     }
+}
 
-    fn get_metadata(&self, key: &str) -> Result<Option<String>, StorageError> {
+impl MetadataStore for SqliteStorage {
+    fn get_metadata(&self, key: &str) -> Result<Option<String>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT value FROM project_metadata WHERE key = ?1")?;
             let result = stmt.query_row(params![key], |row| row.get(0)).optional()?;
@@ -880,7 +896,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn set_metadata(&self, key: &str, value: &str) -> Result<(), StorageError> {
+    fn set_metadata(&self, key: &str, value: &str) -> Result<(), CitadelError> {
         self.with(|conn| {
             conn.execute(
                 "INSERT INTO project_metadata (key, value, updated_at) VALUES (?1, ?2, strftime('%s','now'))
@@ -891,7 +907,7 @@ impl Storage for SqliteStorage {
         })
     }
 
-    fn get_all_metadata(&self) -> Result<HashMap<String, String>, StorageError> {
+    fn get_all_metadata(&self) -> Result<HashMap<String, String>, CitadelError> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT key, value FROM project_metadata")?;
             let rows = stmt.query_map([], |row| {
@@ -905,24 +921,21 @@ impl Storage for SqliteStorage {
             Ok(map)
         })
     }
+}
 
-    fn clear(&self) -> Result<(), StorageError> {
-        self.with(|conn| {
-            conn.execute_batch(
-                "DELETE FROM nodes; DELETE FROM edges; DELETE FROM files; DELETE FROM unresolved_refs;",
-            )?;
-            Ok(())
-        })
-    }
+impl SqliteStorage {
+    // Traversal and utility methods that will move to GraphQuery in Phase 2.
+    // These remain on SqliteStorage directly until the Graph module is created.
 
+    #[allow(dead_code)]
     fn traverse_bfs(
         &self,
         start_id: &str,
         options: &TraversalOptions,
-    ) -> Result<Vec<(Node, Vec<Edge>)>, StorageError> {
+    ) -> Result<Vec<(Node, Vec<Edge>)>, CitadelError> {
         use std::collections::VecDeque;
         let start_node = self.get_node_by_id(start_id)?
-            .ok_or_else(|| StorageError::NotFound(format!("start node not found: {start_id}")))?;
+            .ok_or_else(|| CitadelError::NotFound(format!("start node not found: {start_id}")))?;
 
         let mut visited: FastSet<String> = fast_set();
         let mut queue: VecDeque<(Node, usize)> = VecDeque::new();
@@ -986,7 +999,7 @@ impl Storage for SqliteStorage {
                 for e in rows.flatten() {
                     edges.push(e);
                 }
-                Ok::<_, StorageError>(edges)
+                Ok::<_, CitadelError>(edges)
             })?;
 
             node_edges_map.insert(current_node.id.clone(), edges.clone());
@@ -1017,7 +1030,8 @@ impl Storage for SqliteStorage {
         Ok(results)
     }
 
-    fn get_ancestors(&self, node_id: &str) -> Result<Vec<Node>, StorageError> {
+    #[allow(dead_code)]
+    fn get_ancestors(&self, node_id: &str) -> Result<Vec<Node>, CitadelError> {
         let mut ancestors = Vec::new();
         let mut current_id = node_id.to_string();
         let max_iterations = 100;
@@ -1032,7 +1046,7 @@ impl Storage for SqliteStorage {
                         Self::row_to_node(row)?,
                     ))
                 }).optional()?;
-                Ok::<_, StorageError>(row)
+                Ok::<_, CitadelError>(row)
             })?;
 
             if let Some((parent_id, parent_node)) = parent_edges {
@@ -1045,13 +1059,14 @@ impl Storage for SqliteStorage {
         Ok(ancestors)
     }
 
-    fn get_node_metrics(&self, node_id: &str) -> Result<NodeMetrics, StorageError> {
+    #[allow(dead_code)]
+    fn get_node_metrics(&self, node_id: &str) -> Result<NodeMetrics, CitadelError> {
         let incoming = self.with(|conn| {
             let mut stmt = conn.prepare("SELECT kind FROM edges WHERE target = ?")?;
             let kinds: Vec<String> = stmt.query_map(params![node_id], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
-            Ok::<_, StorageError>(kinds)
+            Ok::<_, CitadelError>(kinds)
         })?;
 
         let outgoing = self.with(|conn| {
@@ -1059,7 +1074,7 @@ impl Storage for SqliteStorage {
             let kinds: Vec<String> = stmt.query_map(params![node_id], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
-            Ok::<_, StorageError>(kinds)
+            Ok::<_, CitadelError>(kinds)
         })?;
 
         let call_count = incoming.iter().filter(|k| *k == "calls").count() as u32
@@ -1080,22 +1095,22 @@ impl Storage for SqliteStorage {
 }
 
 impl SqliteStorage {
-    fn count_map(conn: &Connection, sql: &str) -> Result<HashMap<String, u64>, StorageError> {
-        let mut stmt = conn.prepare(sql).map_err(|e| StorageError::Database(e.to_string()))?;
+    fn count_map(conn: &Connection, sql: &str) -> Result<HashMap<String, u64>, CitadelError> {
+        let mut stmt = conn.prepare(sql).map_err(|e| CitadelError::Database(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
             })
-            .map_err(|e| StorageError::Database(e.to_string()))?;
+            .map_err(|e| CitadelError::Database(e.to_string()))?;
         let mut map = HashMap::new();
         for row in rows {
-            let (k, v) = row.map_err(|e| StorageError::Database(e.to_string()))?;
+            let (k, v) = row.map_err(|e| CitadelError::Database(e.to_string()))?;
             map.insert(k, v);
         }
         Ok(map)
     }
 
-    fn fts5_search(&self, conn: &Connection, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, StorageError> {
+    fn fts5_search(&self, conn: &Connection, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, CitadelError> {
         let fts_query = query
             .replace("::", " ")
             .chars()
@@ -1143,7 +1158,7 @@ impl SqliteStorage {
         params.push(Box::new(offset));
 
         let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(&sql).map_err(|e| StorageError::Database(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
@@ -1155,16 +1170,16 @@ impl SqliteStorage {
                     highlights: None,
                 })
             })
-            .map_err(|e| StorageError::Database(e.to_string()))?;
+            .map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let mut results = Vec::with_capacity(fts_limit as usize);
         for row in rows {
-            results.push(row.map_err(|e| StorageError::Database(e.to_string()))?);
+            results.push(row.map_err(|e| CitadelError::Database(e.to_string()))?);
         }
         Ok(results)
     }
 
-    fn like_search(&self, conn: &Connection, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, StorageError> {
+    fn like_search(&self, conn: &Connection, query: &str, options: &SearchOptions) -> Result<Vec<SearchResult>, CitadelError> {
         let starts_with = format!("{}%", query);
         let contains = format!("%{}%", query);
         let limit = options.limit as i64;
@@ -1214,7 +1229,7 @@ impl SqliteStorage {
         params.push(Box::new(offset));
 
         let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(&sql).map_err(|e| StorageError::Database(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
@@ -1226,16 +1241,16 @@ impl SqliteStorage {
                     highlights: None,
                 })
             })
-            .map_err(|e| StorageError::Database(e.to_string()))?;
+            .map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let mut results = Vec::with_capacity(limit as usize);
         for row in rows {
-            results.push(row.map_err(|e| StorageError::Database(e.to_string()))?);
+            results.push(row.map_err(|e| CitadelError::Database(e.to_string()))?);
         }
         Ok(results)
     }
 
-    fn filter_search(&self, conn: &Connection, options: &SearchOptions) -> Result<Vec<SearchResult>, StorageError> {
+    fn filter_search(&self, conn: &Connection, options: &SearchOptions) -> Result<Vec<SearchResult>, CitadelError> {
         let limit = options.limit as i64;
         let offset = options.offset as i64;
 
@@ -1263,7 +1278,7 @@ impl SqliteStorage {
         params.push(Box::new(offset));
 
         let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(&sql).map_err(|e| StorageError::Database(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
@@ -1274,90 +1289,29 @@ impl SqliteStorage {
                     highlights: None,
                 })
             })
-            .map_err(|e| StorageError::Database(e.to_string()))?;
+            .map_err(|e| CitadelError::Database(e.to_string()))?;
 
         let mut results = Vec::new();
         for row in rows {
-            results.push(row.map_err(|e| StorageError::Database(e.to_string()))?);
+            results.push(row.map_err(|e| CitadelError::Database(e.to_string()))?);
         }
         Ok(results)
     }
 }
 
 fn parse_node_kind(s: &str) -> NodeKind {
-    match s {
-        "file" => NodeKind::File,
-        "module" => NodeKind::Module,
-        "class" => NodeKind::Class,
-        "struct" => NodeKind::Struct,
-        "interface" => NodeKind::Interface,
-        "trait" => NodeKind::Trait,
-        "protocol" => NodeKind::Protocol,
-        "function" => NodeKind::Function,
-        "method" => NodeKind::Method,
-        "property" => NodeKind::Property,
-        "field" => NodeKind::Field,
-        "variable" => NodeKind::Variable,
-        "constant" => NodeKind::Constant,
-        "enum" => NodeKind::Enum,
-        "enum_member" => NodeKind::EnumMember,
-        "type_alias" => NodeKind::TypeAlias,
-        "namespace" => NodeKind::Namespace,
-        "parameter" => NodeKind::Parameter,
-        "import" => NodeKind::Import,
-        "export" => NodeKind::Export,
-        "route" => NodeKind::Route,
-        "component" => NodeKind::Component,
-        _ => NodeKind::Variable,
-    }
+    NodeKind::from_str(s).unwrap_or(NodeKind::Variable)
 }
 
 fn parse_edge_kind(s: &str) -> EdgeKind {
-    match s {
-        "contains" => EdgeKind::Contains,
-        "calls" => EdgeKind::Calls,
-        "imports" => EdgeKind::Imports,
-        "exports" => EdgeKind::Exports,
-        "extends" => EdgeKind::Extends,
-        "implements" => EdgeKind::Implements,
-        "references" => EdgeKind::References,
-        "type_of" => EdgeKind::TypeOf,
-        "returns" => EdgeKind::Returns,
-        "instantiates" => EdgeKind::Instantiates,
-        "overrides" => EdgeKind::Overrides,
-        "decorates" => EdgeKind::Decorates,
-        _ => EdgeKind::References,
-    }
+    EdgeKind::from_str(s).unwrap_or(EdgeKind::References)
 }
 
 fn parse_language(s: &str) -> Language {
-    match s {
-        "typescript" => Language::TypeScript,
-        "javascript" => Language::JavaScript,
-        "tsx" => Language::Tsx,
-        "jsx" => Language::Jsx,
-        "python" => Language::Python,
-        "go" => Language::Go,
-        "rust" => Language::Rust,
-        "java" => Language::Java,
-        "c" => Language::C,
-        "cpp" => Language::Cpp,
-        "csharp" => Language::CSharp,
-        "php" => Language::Php,
-        "ruby" => Language::Ruby,
-        "swift" => Language::Swift,
-        "kotlin" => Language::Kotlin,
-        "dart" => Language::Dart,
-        "svelte" => Language::Svelte,
-        "vue" => Language::Vue,
-        "liquid" => Language::Liquid,
-        "pascal" => Language::Pascal,
-        "scala" => Language::Scala,
-        "lua" => Language::Lua,
-        "luau" => Language::Luau,
-        _ => Language::Unknown,
-    }
+    Language::from_str(s).unwrap_or(Language::Unknown)
 }
+
+impl FullStore for SqliteStorage {}
 
 #[cfg(test)]
 mod tests {

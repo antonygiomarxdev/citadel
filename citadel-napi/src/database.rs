@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::sync::Mutex;
 
+use citadel_core::graph::GraphQuery;
 use citadel_core::storage::sqlite::SqliteStorage;
 use citadel_core::storage::Storage;
 use citadel_core::types::*;

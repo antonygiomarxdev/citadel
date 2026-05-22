@@ -1,4 +1,5 @@
 use crate::storage::test_utils::*;
+use crate::graph::GraphQuery;
 use crate::storage::Storage;
 use crate::types::*;
 

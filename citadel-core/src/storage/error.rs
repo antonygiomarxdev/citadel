@@ -1,27 +1,4 @@
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum StorageError {
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Database error: {0}")]
-    Database(String),
-
-    #[error("Migration error: {0}")]
-    Migration(String),
-
-    #[error("Not initialized: {0}")]
-    NotInitialized(String),
-
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-
-    #[error("Invalid argument: {0}")]
-    InvalidArgument(String),
-}
-
-
+// Forward-compatibility re-export of the new CitadelError for consumers
+// that still use `StorageError`. New code should use `citadel_core::error::CitadelError`
+// directly. This alias will be removed in citadel-core 0.3+.
+pub use crate::error::CitadelError as StorageError;

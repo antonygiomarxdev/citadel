@@ -23,6 +23,7 @@ regex-lite = "0.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+strum = { version = "0.27", features = ["derive"] }
 thiserror = "2"
 # tree-sitter: native Rust bindings (no WASM). Each grammar is a separate crate.
 # We use tree-sitter 0.24+ which requires grammar crates to be built with

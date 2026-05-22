@@ -1,5 +1,6 @@
 pub mod search;
 
+use crate::graph::GraphQuery;
 use crate::storage::Storage;
 use crate::types::*;
 use serde::{Serialize, Deserialize};

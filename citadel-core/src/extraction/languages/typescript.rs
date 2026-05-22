@@ -26,6 +26,7 @@ impl LanguageExtractor for TypeScriptExtractor {
         parser.set_language(&lang.into())
             .map_err(|e| result.errors.push(ExtractionError {
                 message: format!("set_language: {e}"),
+                kind: ExtractionErrorKind::TreeSitterError,
                 line: None,
                 column: None,
             }))
@@ -36,6 +37,7 @@ impl LanguageExtractor for TypeScriptExtractor {
             None => {
                 result.errors.push(ExtractionError {
                     message: "parse returned None".into(),
+                    kind: ExtractionErrorKind::ParseError,
                     line: None,
                     column: None,
                 });

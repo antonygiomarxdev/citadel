@@ -64,6 +64,7 @@ pub struct JsUnresolvedRef {
 #[derive(Debug, Clone)]
 pub struct JsExtractionError {
     pub message: String,
+    pub kind: String,
     pub line: Option<u32>,
     pub column: Option<u32>,
 }
@@ -120,6 +121,7 @@ fn unresolved_to_js(ur: &UnresolvedRef) -> JsUnresolvedRef {
 fn error_to_js(err: &ExtractionError) -> JsExtractionError {
     JsExtractionError {
         message: err.message.clone(),
+        kind: err.kind.as_str().to_string(),
         line: err.line,
         column: err.column,
     }

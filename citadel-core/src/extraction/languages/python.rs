@@ -18,12 +18,12 @@ impl LanguageExtractor for PythonExtractor {
 
         let mut parser = Parser::new();
         parser.set_language(&tree_sitter_python::LANGUAGE.into())
-            .map_err(|e| result.errors.push(ExtractionError { message: format!("set_language: {e}"), line: None, column: None }))
+            .map_err(|e| result.errors.push(ExtractionError { message: format!("set_language: {e}"), kind: ExtractionErrorKind::TreeSitterError, line: None, column: None }))
             .ok();
 
         let tree = match parser.parse(source, None) {
             Some(t) => t,
-            None => { result.errors.push(ExtractionError { message: "parse failed".into(), line: None, column: None }); return result; }
+            None => { result.errors.push(ExtractionError { message: "parse failed".into(), kind: ExtractionErrorKind::ParseError, line: None, column: None }); return result; }
         };
 
         let file_id = generate_node_id(&NodeKind::File, file_path, file_path, 0);
