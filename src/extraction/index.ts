@@ -9,6 +9,22 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
+// Native Rust extraction: tree-sitter + rayon parallel parsing.
+// Replace WASM extraction for TS/JS/Python files when the native backend is available.
+let nativeExtractFiles: ((files: string[][], frameworkNames: string[]) => any[]) | null = null;
+function getNativeExtractor() {
+  if (nativeExtractFiles !== null) return nativeExtractFiles;
+  try {
+    const napi = require('../citadel-native.linux-x64-gnu.node');
+    nativeExtractFiles = (files: string[][], fw: string[]) => napi.extractFiles(files, fw);
+    return nativeExtractFiles;
+  } catch {
+    nativeExtractFiles = undefined as any;
+    return null;
+  }
+}
+// Languages that have native Rust tree-sitter extractors.
+const NATIVE_EXTRACTOR_LANGS = new Set(['typescript', 'javascript', 'tsx', 'jsx', 'python']);
 import {
   Language,
   FileRecord,
@@ -749,7 +765,7 @@ export class ExtractionOrchestrator {
       const batch = files.slice(i, i + FILE_IO_BATCH_SIZE);
 
       // Read files in parallel (with path validation before any I/O)
-      const fileContents = await Promise.all(
+      let fileContents = await Promise.all(
         batch.map(async (fp) => {
           try {
             const fullPath = validatePathWithinRoot(this.rootDir, fp);
@@ -765,6 +781,71 @@ export class ExtractionOrchestrator {
           }
         })
       );
+
+      // Fast path: use native Rust extraction for TS/JS/Python files.
+      // tree-sitter + rayon par_iter() is ~5x faster than WASM per file
+      // and scales linearly across CPU cores.
+      const nativeExtract = getNativeExtractor();
+      if (nativeExtract) {
+        const nativeInputs: string[][] = [];
+        const nativeIndices: number[] = [];
+        const nativeLangMap: string[] = [];
+        const nativeStats: (fs.Stats | null)[] = [];
+        for (let j = 0; j < fileContents.length; j++) {
+          const fc = fileContents[j];
+          if (!fc || fc.error || fc.content === null) continue;
+          const lang = detectLanguage(fc.filePath, fc.content!);
+          if (NATIVE_EXTRACTOR_LANGS.has(lang)) {
+            nativeInputs.push([fc.filePath, fc.content]);
+            nativeIndices.push(j);
+            nativeLangMap.push(lang);
+            nativeStats.push(fc.stats);
+          }
+        }
+        if (nativeInputs.length > 0) {
+          let nativeResults: any[];
+          try {
+            nativeResults = nativeExtract(nativeInputs, frameworkNames);
+          } catch (err) {
+            logWarn('Native extraction failed, falling back to WASM', { error: String(err) });
+            nativeResults = [];
+          }
+          if (nativeResults.length === 0) {
+            // Native extraction returned empty — fall through to WASM.
+          } else {
+          for (let r = 0; r < nativeResults.length; r++) {
+            const idx = nativeIndices[r]!;
+            const fc = fileContents[idx];
+            if (!fc || fc.content === null) continue;
+            const lang = nativeLangMap[r];
+            const result = nativeResults[r] as ExtractionResult;
+            processed++;
+            if (result.nodes.length > 0 || result.errors.length === 0) {
+              this.storeExtractionResult(fc.filePath, fc.content!, lang as any, fc.stats!, result);
+            }
+            if (result.errors.length > 0) {
+              for (const err of result.errors) {
+                if (!err.filePath) err.filePath = fc.filePath;
+              }
+              errors.push(...result.errors);
+            }
+            if (result.nodes.length > 0) {
+              filesIndexed++;
+              totalNodes += result.nodes.length;
+              totalEdges += result.edges.length;
+            } else if (result.errors.some((e: any) => e.severity === 'error')) {
+              filesErrored++;
+            } else {
+              filesSkipped++;
+            }
+            onProgress?.({ phase: 'parsing', current: processed, total });
+          }
+          // Skip these files in the WASM loop below
+          const skipSet = new Set(nativeIndices);
+          fileContents = fileContents.filter((_, j) => !skipSet.has(j));
+          } // end else nativeResults
+        }
+      }
 
       // Send to worker for parsing, store results on main thread
       for (const { filePath, content, stats, error } of fileContents) {
