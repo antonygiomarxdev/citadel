@@ -8,6 +8,9 @@
 # rust
 - Run `cargo clippy --all -- -D warnings` after making Rust code changes. Confidence: 0.70
 
+# testing
+- Split large test files into batches to prevent OOM crashes in vitest workers. Confidence: 0.70
+
 # workflow
 - Create and update GitHub issues for planned tasks and sub-tasks during development. Confidence: 0.75
 
