@@ -357,7 +357,7 @@ pub struct SearchResult {
     pub highlights: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SearchOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
