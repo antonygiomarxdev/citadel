@@ -7,9 +7,15 @@
 pub mod generic;
 pub mod typescript;
 pub mod python;
+pub mod go;
+pub mod rust;
+pub mod java;
 
 pub use typescript::TypeScriptExtractor;
 pub use python::PythonExtractor;
+pub use go::GoExtractor;
+pub use rust::RustExtractor;
+pub use java::JavaExtractor;
 
 use super::LanguageExtractor;
 use crate::types::Language;
@@ -20,6 +26,9 @@ pub fn get_extractor(language: &Language) -> Option<Box<dyn LanguageExtractor>> 
         Language::TypeScript | Language::Tsx => Some(Box::new(TypeScriptExtractor)),
         Language::JavaScript | Language::Jsx => Some(Box::new(TypeScriptExtractor)),
         Language::Python => Some(Box::new(PythonExtractor)),
+        Language::Go => Some(Box::new(GoExtractor)),
+        Language::Rust => Some(Box::new(RustExtractor)),
+        Language::Java => Some(Box::new(JavaExtractor)),
         _ => None,
     }
 }

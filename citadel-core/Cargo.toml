@@ -32,6 +32,9 @@ thiserror = "2"
 tree-sitter = "0.24"
 tree-sitter-typescript = "0.23"
 tree-sitter-python = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-java = "0.23"
 sha2 = "0.10"
 # rayon: data parallelism for tree-sitter extraction.
 # Each file is parsed independently — zero shared state between files.

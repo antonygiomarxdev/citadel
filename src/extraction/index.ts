@@ -22,7 +22,7 @@ function getNativeExtractor() {
   }
 }
 // Languages that have native Rust tree-sitter extractors.
-const NATIVE_EXTRACTOR_LANGS = new Set(['typescript', 'javascript', 'tsx', 'jsx', 'python']);
+const NATIVE_EXTRACTOR_LANGS = new Set(['typescript', 'javascript', 'tsx', 'jsx', 'python', 'go', 'rust', 'java']);
 import {
   Language,
   FileRecord,
