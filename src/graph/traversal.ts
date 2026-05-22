@@ -30,6 +30,10 @@ interface TraversalStep {
 
 /**
  * Graph traverser for BFS and DFS traversal
+ *
+ * @deprecated Use NativeGraphAdapter instead. This TypeScript implementation
+ *   duplicates 642 lines of BFS/DFS/callers/callees/etc. that are now handled
+ *   by the Rust GraphQuery blanket impl via NAPI. Will be removed in v0.9.
  */
 export class GraphTraverser {
   private queries: QueryBuilder;

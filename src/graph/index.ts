@@ -6,3 +6,4 @@
 
 export { GraphTraverser } from './traversal';
 export { GraphQueryManager } from './queries';
+export { NativeGraphAdapter } from './native-adapter';
