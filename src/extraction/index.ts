@@ -46,35 +46,14 @@ import {
 } from './file-scanner';
 import { detectFrameworks } from '../resolution/frameworks';
 import type { ResolutionContext } from '../resolution/types';
+import { ParseWorkerPool } from './parse-worker-pool';
 
 // Re-export for external consumers
 export { scanDirectory, scanDirectoryAsync, shouldIncludeFile, getGitVisibleFiles, getGitChangedFiles };
 export type { GitChanges };
 
 
-/**
- * Number of files to read in parallel during indexing.
- * File reads are I/O-bound; batching overlaps I/O wait with CPU parse work.
- */
 const FILE_IO_BATCH_SIZE = 10;
-
-// PARSER_RESET_INTERVAL moved to parse-worker.ts (runs in worker thread)
-
-/**
- * Maximum time (ms) to wait for a single file to parse in the worker thread.
- * If tree-sitter hangs or WASM runs out of memory, this prevents the entire
- * indexing run from freezing. The worker is restarted after a timeout.
- */
-const PARSE_TIMEOUT_MS = 10_000;
-
-/**
- * Number of files to parse before recycling the worker thread.
- * WASM linear memory can grow but NEVER shrink (WebAssembly spec limitation).
- * The only way to reclaim tree-sitter's WASM heap is to destroy the entire
- * V8 isolate by terminating the worker thread and spawning a fresh one.
- * This interval balances memory usage against the cost of reloading grammars.
- */
-const WORKER_RECYCLE_INTERVAL = 250;
 
 /**
  * Progress callback for indexing operations
@@ -263,163 +242,19 @@ export class ExtractionOrchestrator {
       total,
     });
     await new Promise(resolve => setImmediate(resolve));
-
-    // Detect needed languages and load grammars in the parse worker
+    // Create the parse worker pool (handles worker lifecycle, fallback, timeouts).
+    // The pool auto-detects whether a compiled worker is available and falls back
+    // to in-process parsing in test environments.
     const neededLanguages = [...new Set(files.map((f) => detectLanguage(f)))];
-    // .h files default to 'c' but may be C++ — ensure cpp grammar is loaded when c is needed
     if (neededLanguages.includes('c') && !neededLanguages.includes('cpp')) {
       neededLanguages.push('cpp');
     }
-
-    // Try to use a worker thread for parsing (keeps main thread unblocked for UI).
-    // Falls back to in-process parsing if the compiled worker is unavailable (e.g. tests).
-    const parseWorkerPath = path.join(__dirname, 'parse-worker.js');
-    const useWorker = fs.existsSync(parseWorkerPath);
-    let WorkerClass: typeof import('worker_threads').Worker | null = null;
-
-    if (useWorker) {
-      const { Worker } = await import('worker_threads');
-      WorkerClass = Worker;
-    } else {
-      // In-process fallback: load grammars locally
-      await loadGrammarsForLanguages(neededLanguages);
-    }
-
-    // --- Worker lifecycle management ---
-    // The worker can crash (OOM in WASM) or hang on pathological files.
-    // We track pending parse promises and handle both cases:
-    //   - Timeout: terminate + restart the worker, reject the timed-out request
-    //   - Crash: reject all pending promises, restart for remaining files
-    let parseWorker: import('worker_threads').Worker | null = null;
-    let nextId = 0;
-    let workerParseCount = 0;
-    const pendingParses = new Map<number, {
-      resolve: (result: ExtractionResult) => void;
-      reject: (err: Error) => void;
-      timer: ReturnType<typeof setTimeout>;
-    }>();
-
-    function rejectAllPending(reason: string): void {
-      for (const [id, pending] of pendingParses) {
-        clearTimeout(pending.timer);
-        pendingParses.delete(id);
-        pending.reject(new Error(reason));
-      }
-    }
-
-    function attachWorkerHandlers(w: import('worker_threads').Worker): void {
-      w.on('message', (msg: { type: string; id?: number; result?: ExtractionResult }) => {
-        if (msg.type === 'parse-result' && msg.id !== undefined) {
-          const pending = pendingParses.get(msg.id);
-          if (pending) {
-            clearTimeout(pending.timer);
-            pendingParses.delete(msg.id);
-            pending.resolve(msg.result!);
-          }
-        }
-      });
-
-      w.on('error', (err) => {
-        logWarn('Parse worker error', { error: err.message });
-        rejectAllPending(`Worker error: ${err.message}`);
-      });
-
-      w.on('exit', (code) => {
-        if (code !== 0 && pendingParses.size > 0) {
-          logWarn('Parse worker exited unexpectedly', { code });
-          rejectAllPending(`Worker exited with code ${code}`);
-        }
-        // Clear reference so we know to respawn, reset count so
-        // the fresh worker gets a full cycle before recycling.
-        if (parseWorker === w) {
-          parseWorker = null;
-          workerParseCount = 0;
-        }
-      });
-    }
-
-    async function ensureWorker(): Promise<import('worker_threads').Worker> {
-      if (parseWorker) return parseWorker;
-      log('Spawning new parse worker...');
-      parseWorker = new WorkerClass!(parseWorkerPath);
-      attachWorkerHandlers(parseWorker);
-
-      // Load grammars in the new worker
-      await new Promise<void>((resolve, reject) => {
-        parseWorker!.once('message', (msg: { type: string }) => {
-          if (msg.type === 'grammars-loaded') resolve();
-          else reject(new Error(`Unexpected message: ${msg.type}`));
-        });
-        parseWorker!.postMessage({ type: 'load-grammars', languages: neededLanguages });
-      });
-
-      return parseWorker;
-    }
-
-    if (WorkerClass) {
-      await ensureWorker();
-    }
-
-    /**
-     * Recycle the worker thread to reclaim WASM memory.
-     * Terminates the current worker and clears the reference so
-     * ensureWorker() will spawn a fresh one on the next call.
-     */
-    function recycleWorker(): void {
-      if (!parseWorker) return;
-      log(`Recycling worker after ${workerParseCount} parses (heap: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB RSS)`);
-      const w = parseWorker;
-      parseWorker = null;
-      workerParseCount = 0;
-      // Fire-and-forget: worker.terminate() can hang if WASM is stuck
-      w.terminate().catch(() => {});
-    }
-
-    async function requestParse(filePath: string, content: string): Promise<ExtractionResult> {
-      if (!WorkerClass) {
-        // In-process fallback
-        return extractFromSource(
-          filePath,
-          content,
-          detectLanguage(filePath, content),
-          frameworkNames
-        );
-      }
-
-      // Recycle the worker before the next parse if we've hit the threshold.
-      // This destroys the WASM linear memory (which can grow but never shrink)
-      // and starts a fresh worker with a clean heap.
-      if (workerParseCount >= WORKER_RECYCLE_INTERVAL) {
-        await recycleWorker();
-      }
-
-      const worker = await ensureWorker();
-      const id = nextId++;
-      workerParseCount++;
-
-      // Scale timeout for large files: base 10s + 10s per 100KB
-      const timeoutMs = PARSE_TIMEOUT_MS + Math.floor(content.length / 100_000) * 10_000;
-
-      return new Promise<ExtractionResult>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pendingParses.delete(id);
-          log(`TIMEOUT: ${filePath} exceeded ${timeoutMs}ms — killing worker`);
-          // Reject FIRST — worker.terminate() can hang if WASM is stuck
-          parseWorker = null;
-          workerParseCount = 0;
-          reject(new Error(`Parse timed out after ${timeoutMs}ms`));
-          // Fire-and-forget: kill the stuck worker in the background
-          worker.terminate().catch(() => {});
-        }, timeoutMs);
-
-        pendingParses.set(id, { resolve, reject, timer });
-        worker.postMessage({ type: 'parse', id, filePath, content, frameworkNames });
-      });
-    }
+    const pool = new ParseWorkerPool(neededLanguages, frameworkNames, verbose);
+    await pool.initialize();
 
     for (let i = 0; i < files.length; i += FILE_IO_BATCH_SIZE) {
       if (signal?.aborted) {
-        if (parseWorker) (parseWorker as import('worker_threads').Worker).terminate().catch(() => {});
+        if (pool.hasWorker) pool.terminate();
         return {
           success: false,
           filesIndexed,
@@ -520,7 +355,7 @@ export class ExtractionOrchestrator {
       // Send to worker for parsing, store results on main thread
       for (const { filePath, content, stats, error } of fileContents) {
         if (signal?.aborted) {
-          if (parseWorker) (parseWorker as import('worker_threads').Worker).terminate().catch(() => {});
+          if (pool.hasWorker) pool.terminate();
           return {
             success: false,
             filesIndexed,
@@ -577,7 +412,7 @@ export class ExtractionOrchestrator {
         // Wrapped in try/catch to handle worker timeouts and crashes gracefully.
         let result: ExtractionResult;
         try {
-          result = await requestParse(filePath, content);
+          result = await pool.requestParse(filePath, content);
         } catch (parseErr) {
           processed++;
           filesErrored++;
@@ -637,7 +472,7 @@ export class ExtractionOrchestrator {
         (e.message.includes('Worker exited') || e.message.includes('memory access out of bounds'))
     );
 
-    if (retryableErrors.length > 0 && WorkerClass) {
+    if (retryableErrors.length > 0 && pool.hasWorker) {
       log(`Retrying ${retryableErrors.length} files that failed due to WASM memory errors...`);
 
       const stillFailing: typeof retryableErrors = [];
@@ -647,7 +482,8 @@ export class ExtractionOrchestrator {
         if (signal?.aborted) break;
 
         // Fresh worker for every retry — maximum WASM headroom
-        recycleWorker();
+        // Fresh worker for every retry — maximum WASM headroom
+        pool.recycleWorker();
 
         let content: string;
         try {
@@ -660,7 +496,7 @@ export class ExtractionOrchestrator {
 
         let result: ExtractionResult;
         try {
-          result = await requestParse(filePath, content);
+          result = await pool.requestParse(filePath, content);
         } catch {
           stillFailing.push(errEntry);
           continue;
@@ -692,7 +528,8 @@ export class ExtractionOrchestrator {
           const filePath = errEntry.filePath!;
           if (signal?.aborted) break;
 
-          recycleWorker();
+          // Fresh worker for every retry — maximum WASM headroom
+        pool.recycleWorker();
 
           let fullContent: string;
           try {
@@ -712,7 +549,7 @@ export class ExtractionOrchestrator {
 
           let result: ExtractionResult;
           try {
-            result = await requestParse(filePath, stripped);
+            result = await pool.requestParse(filePath, stripped);
           } catch {
             continue;
           }
@@ -734,11 +571,8 @@ export class ExtractionOrchestrator {
       }
     }
 
-    // Shut down parse worker and clear any pending timers
-    rejectAllPending('Indexing complete');
-    if (parseWorker) {
-      (parseWorker as import('worker_threads').Worker).terminate().catch(() => {});
-    }
+    // Shut down parse worker
+    pool.terminate();
 
     return {
       success: filesIndexed > 0 || errors.filter((e) => e.severity === 'error').length === 0,
