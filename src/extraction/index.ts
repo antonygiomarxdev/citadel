@@ -7,7 +7,6 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import * as crypto from 'crypto';
 // Native Rust extraction: tree-sitter + rayon parallel parsing.
 // Replace WASM extraction for TS/JS/Python files when the native backend is available.
 let nativeExtractFiles: ((files: string[][], frameworkNames: string[]) => any[]) | null = null;
@@ -34,8 +33,9 @@ import {
 import { QueryBuilder } from '../db/queries';
 import { extractFromSource } from './tree-sitter';
 import { detectLanguage, isLanguageSupported, initGrammars, loadGrammarsForLanguages } from './grammars';
-import { logDebug, logWarn } from '../errors';
+import { logWarn } from '../errors';
 import { validatePathWithinRoot } from '../utils';
+import { hashContent } from '../utils/hash';
 import {
   scanDirectory,
   scanDirectoryAsync,
@@ -47,6 +47,7 @@ import {
 import { detectFrameworks } from '../resolution/frameworks';
 import type { ResolutionContext } from '../resolution/types';
 import { ParseWorkerPool } from './parse-worker-pool';
+import { detectFileChanges } from './change-detector';
 
 // Re-export for external consumers
 export { scanDirectory, scanDirectoryAsync, shouldIncludeFile, getGitVisibleFiles, getGitChangedFiles };
@@ -90,13 +91,6 @@ export interface SyncResult {
   nodesUpdated: number;
   durationMs: number;
   changedFilePaths?: string[];
-}
-
-/**
- * Calculate SHA256 hash of file contents
- */
-export function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 /**
@@ -814,133 +808,41 @@ export class ExtractionOrchestrator {
    * Uses git status as a fast path when available, falling back to full scan.
    */
   async sync(onProgress?: (progress: IndexProgress) => void): Promise<SyncResult> {
-    await initGrammars(); // Initialize WASM runtime (grammars loaded lazily below)
+    await initGrammars();
     const startTime = Date.now();
-    let filesChecked = 0;
-    let filesAdded = 0;
-    let filesModified = 0;
-    let filesRemoved = 0;
-    let nodesUpdated = 0;
     const changedFilePaths: string[] = [];
+    let nodesUpdated = 0;
 
-    onProgress?.({
-      phase: 'scanning',
-      current: 0,
-      total: 0,
-    });
+    onProgress?.({ phase: 'scanning', current: 0, total: 0 });
 
-    const filesToIndex: string[] = [];
-    const gitChanges = getGitChangedFiles(this.rootDir, this.config);
+    const changes = detectFileChanges(this.rootDir, this.config, this.queries);
 
-    if (gitChanges) {
-      // === Git fast path ===
-      // Only inspect the files git reports as changed instead of scanning everything.
-      filesChecked = gitChanges.modified.length + gitChanges.added.length + gitChanges.deleted.length;
-
-      // Handle deleted files
-      for (const filePath of gitChanges.deleted) {
-        const tracked = this.queries.getFileByPath(filePath);
-        if (tracked) {
-          this.queries.deleteFile(filePath);
-          filesRemoved++;
-        }
-      }
-
-      // Handle modified + added files — read + hash only these. Untracked
-      // (`??`) files stay untracked in git even after we index them, so they
-      // can't be trusted as "new": re-hash and compare against the DB exactly
-      // like modified files. Otherwise every sync re-indexes them and status
-      // reports them as pending forever. (See issue #206.)
-      for (const filePath of [...gitChanges.modified, ...gitChanges.added]) {
-        const fullPath = path.join(this.rootDir, filePath);
-        let content: string;
-        try {
-          content = fs.readFileSync(fullPath, 'utf-8');
-        } catch (error) {
-          logDebug('Skipping unreadable file during sync', { filePath, error: String(error) });
-          continue;
-        }
-
-        const contentHash = hashContent(content);
-        const tracked = this.queries.getFileByPath(filePath);
-
-        if (!tracked) {
-          filesToIndex.push(filePath);
-          changedFilePaths.push(filePath);
-          filesAdded++;
-        } else if (tracked.contentHash !== contentHash) {
-          filesToIndex.push(filePath);
-          changedFilePaths.push(filePath);
-          filesModified++;
-        }
-      }
-    } else {
-      // === Fallback: full scan (non-git project or git failure) ===
-      const currentFiles = new Set(scanDirectory(this.rootDir, this.config));
-      filesChecked = currentFiles.size;
-
-      // Build Map for O(1) lookups instead of .find() per file
-      const trackedFiles = this.queries.getAllFiles();
-      const trackedMap = new Map<string, FileRecord>();
-      for (const f of trackedFiles) {
-        trackedMap.set(f.path, f);
-      }
-
-      // Find files to remove (in DB but not on disk)
-      for (const tracked of trackedFiles) {
-        if (!currentFiles.has(tracked.path)) {
-          this.queries.deleteFile(tracked.path);
-          filesRemoved++;
-        }
-      }
-
-      // Find files to add or update
-      for (const filePath of currentFiles) {
-        const fullPath = path.join(this.rootDir, filePath);
-        let content: string;
-        try {
-          content = fs.readFileSync(fullPath, 'utf-8');
-        } catch (error) {
-          logDebug('Skipping unreadable file during sync', { filePath, error: String(error) });
-          continue;
-        }
-
-        const contentHash = hashContent(content);
-        const tracked = trackedMap.get(filePath);
-
-        if (!tracked) {
-          filesToIndex.push(filePath);
-          changedFilePaths.push(filePath);
-          filesAdded++;
-        } else if (tracked.contentHash !== contentHash) {
-          filesToIndex.push(filePath);
-          changedFilePaths.push(filePath);
-          filesModified++;
-        }
-      }
+    // Handle removed files
+    for (const filePath of changes.removed) {
+      this.queries.deleteFile(filePath);
     }
 
-    // Load only grammars needed for changed files
+    // Collect files to index (added + modified)
+    const filesToIndex = [...changes.added, ...changes.modified];
+    changedFilePaths.push(...filesToIndex);
+
+    const filesChecked = changes.added.length + changes.modified.length + changes.removed.length;
+    const filesAdded = changes.added.length;
+    const filesModified = changes.modified.length;
+    const filesRemoved = changes.removed.length;
+
     if (filesToIndex.length > 0) {
       const neededLanguages = [...new Set(filesToIndex.map((f) => detectLanguage(f)))];
-      // .h files default to 'c' but may be C++ — ensure cpp grammar is loaded
       if (neededLanguages.includes('c') && !neededLanguages.includes('cpp')) {
         neededLanguages.push('cpp');
       }
       await loadGrammarsForLanguages(neededLanguages);
     }
 
-    // Index changed files
     const total = filesToIndex.length;
     for (let i = 0; i < filesToIndex.length; i++) {
       const filePath = filesToIndex[i]!;
-      onProgress?.({
-        phase: 'parsing',
-        current: i + 1,
-        total,
-        currentFile: filePath,
-      });
-
+      onProgress?.({ phase: 'parsing', current: i + 1, total, currentFile: filePath });
       const result = await this.indexFile(filePath);
       nodesUpdated += result.nodes.length;
     }
@@ -956,97 +858,8 @@ export class ExtractionOrchestrator {
     };
   }
 
-  /**
-   * Get files that have changed since last index.
-   * Uses git status as a fast path when available, falling back to full scan.
-   */
   getChangedFiles(): { added: string[]; modified: string[]; removed: string[] } {
-    const gitChanges = getGitChangedFiles(this.rootDir, this.config);
-
-    if (gitChanges) {
-      // === Git fast path ===
-      const added: string[] = [];
-      const modified: string[] = [];
-      const removed: string[] = [];
-
-      // Deleted files — only report if tracked in DB
-      for (const filePath of gitChanges.deleted) {
-        const tracked = this.queries.getFileByPath(filePath);
-        if (tracked) {
-          removed.push(filePath);
-        }
-      }
-
-      // Modified + added files — read + hash, compare with DB. Untracked (`??`)
-      // files stay untracked in git even after indexing, so they must be
-      // hash-compared like modified files instead of always counting as added —
-      // otherwise status reports them as pending forever. (See issue #206.)
-      for (const filePath of [...gitChanges.modified, ...gitChanges.added]) {
-        const fullPath = path.join(this.rootDir, filePath);
-        let content: string;
-        try {
-          content = fs.readFileSync(fullPath, 'utf-8');
-        } catch (error) {
-          logDebug('Skipping unreadable file while detecting changes', { filePath, error: String(error) });
-          continue;
-        }
-
-        const contentHash = hashContent(content);
-        const tracked = this.queries.getFileByPath(filePath);
-
-        if (!tracked) {
-          added.push(filePath);
-        } else if (tracked.contentHash !== contentHash) {
-          modified.push(filePath);
-        }
-      }
-
-      return { added, modified, removed };
-    }
-
-    // === Fallback: full scan (non-git project or git failure) ===
-    const currentFiles = new Set(scanDirectory(this.rootDir, this.config));
-    const trackedFiles = this.queries.getAllFiles();
-
-    // Build Map for O(1) lookups
-    const trackedMap = new Map<string, FileRecord>();
-    for (const f of trackedFiles) {
-      trackedMap.set(f.path, f);
-    }
-
-    const added: string[] = [];
-    const modified: string[] = [];
-    const removed: string[] = [];
-
-    // Find removed files
-    for (const tracked of trackedFiles) {
-      if (!currentFiles.has(tracked.path)) {
-        removed.push(tracked.path);
-      }
-    }
-
-    // Find added and modified files
-    for (const filePath of currentFiles) {
-      const fullPath = path.join(this.rootDir, filePath);
-      let content: string;
-      try {
-        content = fs.readFileSync(fullPath, 'utf-8');
-      } catch (error) {
-        logDebug('Skipping unreadable file while detecting changes', { filePath, error: String(error) });
-        continue;
-      }
-
-      const contentHash = hashContent(content);
-      const tracked = trackedMap.get(filePath);
-
-      if (!tracked) {
-        added.push(filePath);
-      } else if (tracked.contentHash !== contentHash) {
-        modified.push(filePath);
-      }
-    }
-
-    return { added, modified, removed };
+    return detectFileChanges(this.rootDir, this.config, this.queries);
   }
 }
 
