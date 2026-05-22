@@ -14,7 +14,6 @@ pub struct ExtractorConfig {
     pub import_kinds: Vec<String>,
     pub call_kinds: Vec<String>,
     pub name_field: &'static str,
-    pub body_field: &'static str,
 }
 
 pub fn walk(
@@ -44,20 +43,32 @@ fn walk_node(
     let node = cursor.node();
     if node.is_named() {
         let kind = node.kind();
-        if config.function_kinds.iter().any(|k| k == kind) {
-            extract_node(&node, NodeKind::Function, source, file_path, language.clone(), result, scope_stack, config);
+        let is_scope_kind = config.class_kinds.iter().any(|k| k == kind)
+            || config.interface_kinds.iter().any(|k| k == kind)
+            || config.struct_kinds.iter().any(|k| k == kind);
+        let scope_id: Option<String> = if config.function_kinds.iter().any(|k| k == kind) {
+            extract_node(&node, NodeKind::Function, source, file_path, language.clone(), result, scope_stack, config)
         } else if config.class_kinds.iter().any(|k| k == kind) {
-            extract_node(&node, NodeKind::Class, source, file_path, language.clone(), result, scope_stack, config);
+            extract_node(&node, NodeKind::Class, source, file_path, language.clone(), result, scope_stack, config)
         } else if config.interface_kinds.iter().any(|k| k == kind) {
-            extract_node(&node, NodeKind::Interface, source, file_path, language.clone(), result, scope_stack, config);
+            extract_node(&node, NodeKind::Interface, source, file_path, language.clone(), result, scope_stack, config)
         } else if config.struct_kinds.iter().any(|k| k == kind) {
-            extract_node(&node, NodeKind::Struct, source, file_path, language.clone(), result, scope_stack, config);
+            extract_node(&node, NodeKind::Struct, source, file_path, language.clone(), result, scope_stack, config)
         } else if config.variable_kinds.iter().any(|k| k == kind) {
-            extract_node(&node, NodeKind::Variable, source, file_path, language.clone(), result, scope_stack, config);
+            extract_node(&node, NodeKind::Variable, source, file_path, language.clone(), result, scope_stack, config)
         } else if config.import_kinds.iter().any(|k| k == kind) {
             extract_import(&node, source, file_path, language.clone(), result, config);
+            None
         } else if config.call_kinds.iter().any(|k| k == kind) {
             extract_call(&node, source, file_path, language.clone(), result, scope_stack);
+            None
+        } else {
+            None
+        };
+        if is_scope_kind
+            && let Some(ref id) = scope_id
+        {
+            scope_stack.push(id.clone());
         }
     }
     if cursor.goto_first_child() {
@@ -66,6 +77,16 @@ fn walk_node(
     }
     if cursor.goto_next_sibling() {
         walk_node(cursor, source, file_path, language, result, scope_stack, config);
+    }
+    // Pop scope after processing children
+    if node.is_named() {
+        let kind = node.kind();
+        let is_scope = config.class_kinds.iter().any(|k| k == kind)
+            || config.interface_kinds.iter().any(|k| k == kind)
+            || config.struct_kinds.iter().any(|k| k == kind);
+        if is_scope {
+            scope_stack.pop();
+        }
     }
 }
 
@@ -78,9 +99,9 @@ fn extract_node(
     result: &mut ExtractionResult,
     scope_stack: &mut Vec<String>,
     config: &ExtractorConfig,
-) {
+) -> Option<String> {
     let name = extract_name(node, config.name_field, source);
-    if name.is_empty() { return; }
+    if name.is_empty() { return None; }
     let parent_id = scope_stack.last().cloned().unwrap_or_default();
     let node_id = generate_node_id(&kind, &name, file_path, node.start_position().row as u32 + 1);
     let qname = format!("{file_path}::{name}");
@@ -98,12 +119,13 @@ fn extract_node(
         decorators: None, type_parameters: None, updated_at: crate::storage::test_utils::now_ts(),
     });
     result.edges.push(Edge {
-        source: parent_id, target: node_id,
+        source: parent_id, target: node_id.clone(),
         kind: EdgeKind::Contains, metadata: None,
         line: Some(node.start_position().row as u32 + 1),
         column: Some(node.start_position().column as u32),
         provenance: Some("tree-sitter".into()),
     });
+    Some(node_id)
 }
 
 fn extract_import(

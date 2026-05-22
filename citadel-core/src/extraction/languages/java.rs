@@ -9,7 +9,6 @@ pub struct JavaExtractor;
 impl LanguageExtractor for JavaExtractor {
     fn extract(&self, source: &str, file_path: &str, language: Language, _framework_names: &[String]) -> ExtractionResult {
         let mut result = make_empty_result(file_path, language.clone());
-        let _source_bytes = source.as_bytes();
 
         let mut parser = Parser::new();
         if let Err(e) = parser.set_language(&tree_sitter_java::LANGUAGE.into()) {
@@ -31,7 +30,6 @@ impl LanguageExtractor for JavaExtractor {
             import_kinds: vec!["import_declaration".into()],
             call_kinds: vec!["method_invocation".into(), "object_creation_expression".into()],
             name_field: "name",
-            body_field: "body",
         };
         walk(&tree, source, file_path, language, &mut result, &config);
         result

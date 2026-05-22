@@ -12,8 +12,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type { Worker } from 'worker_threads';
-import type { ExtractionResult } from '../types';
-import type { Language } from '../types';
+import type { ExtractionResult, Language } from '../types';
 import { extractFromSource } from './tree-sitter';
 import { detectLanguage, loadGrammarsForLanguages } from './grammars';
 import { logWarn } from '../errors';

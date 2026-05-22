@@ -15,6 +15,11 @@ import { logDebug } from '../errors';
 import picomatch from 'picomatch';
 
 const CODEGRAPH_IGNORE_MARKER = '.codegraphignore';
+const GIT_LS_FILES_TIMEOUT = 30000;
+const GIT_LS_FILES_MAX_BUFFER = 50 * 1024 * 1024;
+const GIT_REVPARSE_TIMEOUT = 5000;
+const GIT_STATUS_TIMEOUT = 10000;
+const GIT_PORCELAIN_MIN_WIDTH = 4;
 
 function matchesGlob(filePath: string, pattern: string): boolean {
   filePath = normalizePath(filePath);
@@ -39,7 +44,7 @@ export function shouldIncludeFile(
 }
 
 function collectGitFiles(repoDir: string, prefix: string, files: Set<string>): void {
-  const gitOpts = { cwd: repoDir, encoding: 'utf-8' as const, timeout: 30000, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'] };
+  const gitOpts = { cwd: repoDir, encoding: 'utf-8' as const, timeout: GIT_LS_FILES_TIMEOUT, maxBuffer: GIT_LS_FILES_MAX_BUFFER, stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'] };
 
   const tracked = execFileSync('git', ['ls-files', '-c', '--recurse-submodules'], gitOpts);
   for (const line of tracked.split('\n')) {
@@ -69,7 +74,7 @@ export function getGitVisibleFiles(rootDir: string): Set<string> | null {
     const gitRoot = execFileSync(
       'git',
       ['rev-parse', '--show-toplevel'],
-      { cwd: rootDir, encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+      { cwd: rootDir, encoding: 'utf-8', timeout: GIT_REVPARSE_TIMEOUT, stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
 
     if (path.resolve(gitRoot) !== path.resolve(rootDir)) {
@@ -77,7 +82,7 @@ export function getGitVisibleFiles(rootDir: string): Set<string> | null {
         execFileSync(
           'git',
           ['check-ignore', '-q', path.resolve(rootDir)],
-          { cwd: rootDir, encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+          { cwd: rootDir, encoding: 'utf-8', timeout: GIT_REVPARSE_TIMEOUT, stdio: ['pipe', 'pipe', 'pipe'] }
         );
         return null;
       } catch {
@@ -104,7 +109,7 @@ export function getGitChangedFiles(rootDir: string, config: CodeGraphConfig): Gi
     const output = execFileSync(
       'git',
       ['status', '--porcelain', '--no-renames'],
-      { cwd: rootDir, encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      { cwd: rootDir, encoding: 'utf-8', timeout: GIT_STATUS_TIMEOUT, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
     const modified: string[] = [];
@@ -112,7 +117,7 @@ export function getGitChangedFiles(rootDir: string, config: CodeGraphConfig): Gi
     const deleted: string[] = [];
 
     for (const line of output.split('\n')) {
-      if (line.length < 4) continue;
+      if (line.length < GIT_PORCELAIN_MIN_WIDTH) continue;
 
       const statusCode = line.substring(0, 2);
       const filePath = normalizePath(line.substring(3));

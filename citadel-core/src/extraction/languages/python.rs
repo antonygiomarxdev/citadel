@@ -101,7 +101,7 @@ fn extract_py_node(
         start_line: node.start_position().row as u32 + 1, end_line: node.end_position().row as u32 + 1,
         start_column: node.start_position().column as u32, end_column: node.end_position().column as u32,
         docstring: None, signature: Some(get_node_text(node, source).lines().next().unwrap_or("").to_string()),
-        visibility: None, is_exported: false, is_async: false, is_static: false, is_abstract: false,
+        visibility: None, is_exported: false, is_async: extract_py_async(node), is_static: false, is_abstract: false,
         decorators: None, type_parameters: None, updated_at: crate::storage::test_utils::now_ts(),
     });
     result.edges.push(Edge {
@@ -118,7 +118,7 @@ fn extract_py_import(
     file_path: &str,
     language: Language,
     result: &mut ExtractionResult,
-    _scope_stack: &mut Vec<String>,
+    scope_stack: &mut Vec<String>,
 ) {
     // Python: `from X import Y` or `import X`
     let text = get_node_text(node, source);
@@ -129,7 +129,7 @@ fn extract_py_import(
             let name = name.trim();
             if name.is_empty() || name == "*" { continue; }
             result.unresolved_references.push(UnresolvedRef {
-                from_node_id: scope_stack().to_string(),
+                from_node_id: scope_stack.last().cloned().unwrap_or_default(),
                 reference_name: name.to_string(),
                 reference_kind: "imports".to_string(),
                 line: Some(node.start_position().row as u32 + 1),
@@ -161,7 +161,14 @@ fn extract_py_call(
     }
 }
 
-// Python scope: last element of scope_stack, or file_id fallback
-fn scope_stack() -> String {
-    String::new()
+// Python async: detect async def
+fn extract_py_async(node: &TsNode) -> bool {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i)
+            && child.kind() == "async"
+        {
+            return true;
+        }
+    }
+    false
 }

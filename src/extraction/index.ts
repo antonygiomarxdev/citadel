@@ -6,7 +6,6 @@
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import * as path from 'path';
 // Native Rust extraction: tree-sitter + rayon parallel parsing.
 // Replace WASM extraction for TS/JS/Python files when the native backend is available.
 let nativeExtractFiles: ((files: string[][], frameworkNames: string[]) => any[]) | null = null;
@@ -246,6 +245,24 @@ export class ExtractionOrchestrator {
     const pool = new ParseWorkerPool(neededLanguages, frameworkNames, verbose);
     await pool.initialize();
 
+    const tallyResult = (result: ExtractionResult): void => {
+      if (result.errors.length > 0) {
+        for (const err of result.errors) {
+          if (!err.filePath) err.filePath = result.nodes[0]?.filePath;
+        }
+        errors.push(...result.errors);
+      }
+      if (result.nodes.length > 0) {
+        filesIndexed++;
+        totalNodes += result.nodes.length;
+        totalEdges += result.edges.length;
+      } else if (result.errors.some((e) => e.severity === 'error')) {
+        filesErrored++;
+      } else {
+        filesSkipped++;
+      }
+    };
+
     for (let i = 0; i < files.length; i += FILE_IO_BATCH_SIZE) {
       if (signal?.aborted) {
         if (pool.hasWorker) pool.terminate();
@@ -322,21 +339,8 @@ export class ExtractionOrchestrator {
             if (result.nodes.length > 0 || result.errors.length === 0) {
               this.storeExtractionResult(fc.filePath, fc.content!, lang as any, fc.stats!, result);
             }
-            if (result.errors.length > 0) {
-              for (const err of result.errors) {
-                if (!err.filePath) err.filePath = fc.filePath;
-              }
-              errors.push(...result.errors);
-            }
-            if (result.nodes.length > 0) {
-              filesIndexed++;
-              totalNodes += result.nodes.length;
-              totalEdges += result.edges.length;
-            } else if (result.errors.some((e: any) => e.severity === 'error')) {
-              filesErrored++;
-            } else {
-              filesSkipped++;
-            }
+            this.storeExtractionResult(fc.filePath, fc.content!, lang as Language, fc.stats!, result);
+            tallyResult(result);
             onProgress?.({ phase: 'parsing', current: processed, total });
           }
           // Skip these files in the WASM loop below
@@ -427,22 +431,8 @@ export class ExtractionOrchestrator {
           this.storeExtractionResult(filePath, content, language, stats, result);
         }
 
-        if (result.errors.length > 0) {
-          for (const err of result.errors) {
-            if (!err.filePath) err.filePath = filePath;
-          }
-          errors.push(...result.errors);
-        }
-
-        if (result.nodes.length > 0) {
-          filesIndexed++;
-          totalNodes += result.nodes.length;
-          totalEdges += result.edges.length;
-        } else if (result.errors.some((e) => e.severity === 'error')) {
-          filesErrored++;
-        } else {
-          filesSkipped++;
-        }
+        tallyResult(result);
+        onProgress?.({ phase: 'parsing', current: processed, total });
       }
     }
 
@@ -498,8 +488,11 @@ export class ExtractionOrchestrator {
 
         if (result.nodes.length > 0 || result.errors.length === 0) {
           const language = detectLanguage(filePath, content);
-          const stats = await fsp.stat(path.join(this.rootDir, filePath));
-          this.storeExtractionResult(filePath, content, language, stats, result);
+          const fullPath = validatePathWithinRoot(this.rootDir, filePath);
+          const stats = fullPath ? await fsp.stat(fullPath) : null;
+          if (stats) {
+            this.storeExtractionResult(filePath, content, language, stats, result);
+          }
 
           const idx = errors.indexOf(errEntry);
           if (idx >= 0) errors.splice(idx, 1);
@@ -550,8 +543,11 @@ export class ExtractionOrchestrator {
 
           if (result.nodes.length > 0 || result.errors.length === 0) {
             const language = detectLanguage(filePath, fullContent);
-            const stats = await fsp.stat(path.join(this.rootDir, filePath));
-            this.storeExtractionResult(filePath, fullContent, language, stats, result);
+            const fullPath = validatePathWithinRoot(this.rootDir, filePath);
+            const stats = fullPath ? await fsp.stat(fullPath) : null;
+            if (stats) {
+              this.storeExtractionResult(filePath, fullContent, language, stats, result);
+            }
 
             const idx = errors.indexOf(errEntry);
             if (idx >= 0) errors.splice(idx, 1);

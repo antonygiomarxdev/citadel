@@ -11,15 +11,6 @@ pub struct ExtractionResult {
     pub errors: Vec<ExtractionError>,
 }
 
-/// Context passed to extractors during AST traversal.
-pub struct ExtractorContext<'a> {
-    pub source: &'a str,
-    pub file_path: &'a str,
-    pub language: Language,
-    pub node_stack: Vec<String>,
-    pub framework_names: &'a [String],
-}
-
 /// Trait implemented by each language extractor.
 /// Each language module exports one struct implementing this trait.
 pub trait LanguageExtractor: Send + Sync {
