@@ -1,9 +1,3 @@
-/**
- * Graph Module
- *
- * Provides graph traversal and query functionality for the code knowledge graph.
- */
-
+export type { IGraphTraverser } from './traverser-interface';
 export { GraphTraverser } from './traversal';
 export { GraphQueryManager } from './queries';
-export { NativeGraphAdapter } from './native-adapter';

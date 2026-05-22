@@ -21,7 +21,7 @@ import {
   SearchResult,
 } from '../types';
 import { QueryBuilder } from '../db/queries';
-import { GraphTraverser } from '../graph';
+import type { IGraphTraverser } from '../graph/traverser-interface';
 import { formatContextAsMarkdown, formatContextAsJson } from './formatter';
 import { logDebug } from '../errors';
 import { validatePathWithinRoot } from '../utils';
@@ -182,12 +182,12 @@ const DEFAULT_FIND_OPTIONS: Required<FindRelevantContextOptions> = {
 export class ContextBuilder {
   private projectRoot: string;
   private queries: QueryBuilder;
-  private traverser: GraphTraverser;
+  private traverser: IGraphTraverser;
 
   constructor(
     projectRoot: string,
     queries: QueryBuilder,
-    traverser: GraphTraverser
+    traverser: IGraphTraverser
   ) {
     this.projectRoot = projectRoot;
     this.queries = queries;
@@ -1119,7 +1119,7 @@ export class ContextBuilder {
 export function createContextBuilder(
   projectRoot: string,
   queries: QueryBuilder,
-  traverser: GraphTraverser
+  traverser: IGraphTraverser
 ): ContextBuilder {
   return new ContextBuilder(projectRoot, queries, traverser);
 }

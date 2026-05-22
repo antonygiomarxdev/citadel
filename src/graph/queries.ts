@@ -6,18 +6,18 @@
 
 import { Node, Edge, Context, Subgraph, EdgeKind } from '../types';
 import { QueryBuilder } from '../db/queries';
-import { GraphTraverser } from './traversal';
+import { IGraphTraverser } from './traverser-interface';
 
 /**
  * Graph query manager for complex queries
  */
 export class GraphQueryManager {
   private queries: QueryBuilder;
-  private traverser: GraphTraverser;
+  private traverser: IGraphTraverser;
 
-  constructor(queries: QueryBuilder) {
+  constructor(queries: QueryBuilder, traverser: IGraphTraverser) {
     this.queries = queries;
-    this.traverser = new GraphTraverser(queries);
+    this.traverser = traverser;
   }
 
   /**
@@ -422,7 +422,7 @@ export class GraphQueryManager {
   /**
    * Access the underlying traverser for direct traversal operations
    */
-  getTraverser(): GraphTraverser {
+  getTraverser(): IGraphTraverser {
     return this.traverser;
   }
 }

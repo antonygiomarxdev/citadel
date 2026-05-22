@@ -6,6 +6,7 @@
 
 import { Node, Edge, Subgraph, TraversalOptions, EdgeKind } from '../types';
 import { QueryBuilder } from '../db/queries';
+import type { IGraphTraverser } from './traverser-interface';
 
 /**
  * Default traversal options
@@ -35,7 +36,7 @@ interface TraversalStep {
  *   duplicates 642 lines of BFS/DFS/callers/callees/etc. that are now handled
  *   by the Rust GraphQuery blanket impl via NAPI. Will be removed in v0.9.
  */
-export class GraphTraverser {
+export class GraphTraverser implements IGraphTraverser {
   private queries: QueryBuilder;
 
   constructor(queries: QueryBuilder) {

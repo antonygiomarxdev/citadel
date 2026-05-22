@@ -45,7 +45,7 @@ import {
   createResolver,
   ResolutionResult,
 } from './resolution';
-import { GraphTraverser, GraphQueryManager, NativeGraphAdapter } from './graph';
+import { GraphTraverser, GraphQueryManager, IGraphTraverser } from './graph';
 import { ContextBuilder, createContextBuilder } from './context';
 import { Mutex, FileLock } from './utils';
 import { FileWatcher, WatchOptions } from './sync';
@@ -135,8 +135,7 @@ export class CodeGraph {
   private graphManager: GraphQueryManager;
   // TS traverser — kept for ContextBuilder which still depends on GraphTraverser directly.
   // Public graph methods prefer nativeTraverser when available.
-  private traverser!: GraphTraverser;
-  private nativeTraverser: NativeGraphAdapter | null | undefined = null;
+  private traverser: IGraphTraverser;
   private contextBuilder: ContextBuilder;
 
   // Mutex for preventing concurrent indexing operations (in-process)
@@ -163,15 +162,12 @@ export class CodeGraph {
     );
     this.orchestrator = new ExtractionOrchestrator(projectRoot, config, queries);
     this.resolver = createResolver(projectRoot, queries);
-    this.graphManager = new GraphQueryManager(queries);
     this.traverser = new GraphTraverser(queries);
-    // NativeGraphAdapter is loaded lazily on first use by getTraverser().
-    // This avoids opening a second SQLite connection during tests and
-    // ensures the native module is only used when a real DB exists.
+    this.graphManager = new GraphQueryManager(queries, this.traverser);
     this.contextBuilder = createContextBuilder(
       projectRoot,
       queries,
-      this.traverser  // ContextBuilder still uses TS GraphTraverser for now
+      this.traverser
     );
   }
 
@@ -714,36 +710,8 @@ export class CodeGraph {
     return this.graphManager.getContext(nodeId);
   }
 
-  /**
-   * Get the active traverser — native Rust if available, TypeScript fallback otherwise.
-   * The native adapter is lazily initialized on first use.
-   */
-  private getTraverser(): GraphTraverser | NativeGraphAdapter {
-    if (this.nativeTraverser) return this.nativeTraverser;
-    if (this.nativeTraverser === null) {
-      try {
-        const dbPath = path.join(this.projectRoot, '.codegraph', 'codegraph.db');
-        this.nativeTraverser = new NativeGraphAdapter(dbPath);
-        return this.nativeTraverser;
-      } catch {
-        this.nativeTraverser = undefined; // Mark as failed, use TS fallback
-      }
-    }
-    return this.traverser;
-  }
-
-  /**
-   * Traverse the graph from a starting node
-   *
-   * Uses breadth-first search by default. Supports filtering by edge types,
-   * node types, and traversal direction.
-   *
-   * @param startId - Starting node ID
-   * @param options - Traversal options
-   * @returns Subgraph containing traversed nodes and edges
-   */
   traverse(startId: string, options?: TraversalOptions): Subgraph {
-    return this.getTraverser().traverseBFS(startId, options);
+    return this.traverser.traverseBFS(startId, options);
   }
 
   /**
@@ -757,7 +725,7 @@ export class CodeGraph {
    * @returns Subgraph containing the call graph
    */
   getCallGraph(nodeId: string, depth: number = 2): Subgraph {
-    return this.getTraverser().getCallGraph(nodeId, depth);
+    return this.traverser.getCallGraph(nodeId, depth);
   }
 
   /**
@@ -770,7 +738,7 @@ export class CodeGraph {
    * @returns Subgraph containing the type hierarchy
    */
   getTypeHierarchy(nodeId: string): Subgraph {
-    return this.getTraverser().getTypeHierarchy(nodeId);
+    return this.traverser.getTypeHierarchy(nodeId);
   }
 
   /**
@@ -783,7 +751,7 @@ export class CodeGraph {
    * @returns Array of nodes and edges that reference this symbol
    */
   findUsages(nodeId: string): Array<{ node: Node; edge: Edge }> {
-    return this.getTraverser().findUsages(nodeId);
+    return this.traverser.findUsages(nodeId);
   }
 
   /**
@@ -794,7 +762,7 @@ export class CodeGraph {
    * @returns Array of nodes that call this function
    */
   getCallers(nodeId: string, maxDepth: number = 1): Array<{ node: Node; edge: Edge }> {
-    return this.getTraverser().getCallers(nodeId, maxDepth);
+    return this.traverser.getCallers(nodeId, maxDepth);
   }
 
   /**
@@ -805,7 +773,7 @@ export class CodeGraph {
    * @returns Array of nodes called by this function
    */
   getCallees(nodeId: string, maxDepth: number = 1): Array<{ node: Node; edge: Edge }> {
-    return this.getTraverser().getCallees(nodeId, maxDepth);
+    return this.traverser.getCallees(nodeId, maxDepth);
   }
 
   /**
@@ -818,7 +786,7 @@ export class CodeGraph {
    * @returns Subgraph containing potentially impacted nodes
    */
   getImpactRadius(nodeId: string, maxDepth: number = 3): Subgraph {
-    return this.getTraverser().getImpactRadius(nodeId, maxDepth);
+    return this.traverser.getImpactRadius(nodeId, maxDepth);
   }
 
   /**
@@ -834,7 +802,7 @@ export class CodeGraph {
     toId: string,
     edgeKinds?: Edge['kind'][]
   ): Array<{ node: Node; edge: Edge | null }> | null {
-    return this.getTraverser().findPath(fromId, toId, edgeKinds);
+    return this.traverser.findPath(fromId, toId, edgeKinds);
   }
 
   /**
@@ -844,7 +812,7 @@ export class CodeGraph {
    * @returns Array of ancestor nodes from immediate parent to root
    */
   getAncestors(nodeId: string): Node[] {
-    return this.getTraverser().getAncestors(nodeId);
+    return this.traverser.getAncestors(nodeId);
   }
 
   /**
@@ -854,7 +822,7 @@ export class CodeGraph {
    * @returns Array of child nodes
    */
   getChildren(nodeId: string): Node[] {
-    return this.getTraverser().getChildren(nodeId);
+    return this.traverser.getChildren(nodeId);
   }
 
   /**
