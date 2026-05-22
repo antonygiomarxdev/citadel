@@ -8,23 +8,16 @@ import * as path from 'path';
 import { Language, Node } from '../types';
 import { UnresolvedRef, ResolvedRef, ResolutionContext, ImportMapping, ReExport } from './types';
 import { applyAliases } from './path-aliases';
+import { getDefaultExtensionRegistry } from './extension-registry';
+import { getDefaultBuiltInRegistry } from './builtin-registry';
 
 /**
- * Extension resolution order by language
+ * Extension resolution order by language — now backed by the registry.
+ * Kept as a cached local for fast lookup during batch resolution.
  */
-const EXTENSION_RESOLUTION: Record<string, string[]> = {
-  typescript: ['.ts', '.tsx', '.d.ts', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'],
-  javascript: ['.js', '.jsx', '.mjs', '.cjs', '/index.js', '/index.jsx'],
-  tsx: ['.tsx', '.ts', '.d.ts', '.js', '.jsx', '/index.tsx', '/index.ts', '/index.js'],
-  jsx: ['.jsx', '.js', '/index.jsx', '/index.js'],
-  python: ['.py', '/__init__.py'],
-  go: ['.go'],
-  rust: ['.rs', '/mod.rs'],
-  java: ['.java'],
-  csharp: ['.cs'],
-  php: ['.php'],
-  ruby: ['.rb'],
-};
+function extensionOrder(language: Language): string[] {
+  return getDefaultExtensionRegistry().resolveOrder(language);
+}
 
 /**
  * Resolve an import path to an actual file
@@ -73,12 +66,16 @@ function isExternalImport(
     return false;
   }
 
-  // Common external patterns
+  // Check built-in registry
+  // Strip leading @scope/ for scoped packages so we match 'scope/pkg' as 'pkg'
+  const bareName = importPath.startsWith('@')
+    ? importPath.split('/').slice(1).join('/')
+    : importPath;
+  if (getDefaultBuiltInRegistry().isBuiltIn(bareName, language)) {
+    return true;
+  }
+
   if (language === 'typescript' || language === 'javascript' || language === 'tsx' || language === 'jsx') {
-    // Node built-ins
-    if (['fs', 'path', 'os', 'crypto', 'http', 'https', 'url', 'util', 'events', 'stream', 'child_process', 'buffer'].includes(importPath)) {
-      return true;
-    }
     // Project-defined alias prefix? Treat as local.
     const aliases = context?.getProjectAliases?.();
     if (aliases) {
@@ -88,21 +85,19 @@ function isExternalImport(
     }
     // Scoped packages or bare specifiers that don't start with aliases
     if (!importPath.startsWith('@/') && !importPath.startsWith('~/') && !importPath.startsWith('src/')) {
-      // Likely an npm package
       return true;
     }
   }
 
   if (language === 'python') {
-    // Standard library modules
-    const stdLibs = ['os', 'sys', 'json', 're', 'math', 'datetime', 'collections', 'typing', 'pathlib', 'logging'];
-    if (stdLibs.includes(importPath.split('.')[0]!)) {
+    // First segment of dotted import (e.g., 'os.path.join' -> 'os')
+    const firstSegment = importPath.split('.')[0]!;
+    if (getDefaultBuiltInRegistry().isBuiltIn(firstSegment, 'python')) {
       return true;
     }
   }
 
   if (language === 'go') {
-    // Standard library or external packages
     if (!importPath.startsWith('.') && !importPath.includes('/internal/')) {
       return true;
     }
@@ -121,7 +116,7 @@ function resolveRelativeImport(
   context: ResolutionContext
 ): string | null {
   const projectRoot = context.getProjectRoot();
-  const extensions = EXTENSION_RESOLUTION[language] || [];
+  const extensions = extensionOrder(language);
 
   // Try the path as-is first
   const basePath = path.resolve(fromDir, importPath);
@@ -160,7 +155,7 @@ function resolveAliasedImport(
   language: Language,
   context: ResolutionContext
 ): string | null {
-  const extensions = EXTENSION_RESOLUTION[language] || [];
+  const extensions = extensionOrder(language);
   const tryWithExt = (basePath: string): string | null => {
     for (const ext of extensions) {
       const candidate = basePath + ext;

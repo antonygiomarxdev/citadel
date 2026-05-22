@@ -1,6 +1,7 @@
 pub mod types;
 pub mod constants;
 pub mod error;
+pub mod fs;
 pub mod storage;
 pub mod graph;
 pub mod extraction;

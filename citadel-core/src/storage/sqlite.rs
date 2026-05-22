@@ -2,13 +2,13 @@ use crate::types::*;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use rusqlite::types::ToSql;
 use std::collections::HashMap;
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
 
 use super::{FastSet, FastMap, fast_set, fast_map, NodeMetrics};
 use super::traits::*;
 use crate::error::CitadelError;
+use crate::fs::{FileSystem, RealFileSystem};
 
 const SCHEMA_SQL: &str = include_str!("../../../src/db/schema.sql");
 
@@ -29,12 +29,21 @@ struct StorageInner {
 
 pub struct SqliteStorage {
     inner: Mutex<StorageInner>,
+    fs: Box<dyn FileSystem>,
 }
 
 impl SqliteStorage {
     pub fn new() -> Self {
         SqliteStorage {
             inner: Mutex::new(StorageInner { conn: None, path: None }),
+            fs: Box::new(RealFileSystem),
+        }
+    }
+
+    pub fn with_fs(fs: Box<dyn FileSystem>) -> Self {
+        SqliteStorage {
+            inner: Mutex::new(StorageInner { conn: None, path: None }),
+            fs,
         }
     }
 
@@ -261,9 +270,8 @@ impl Default for SqliteStorage {
 
 impl Lifecycle for SqliteStorage {
     fn initialize(&mut self, db_path: &str) -> Result<(), CitadelError> {
-        if let Some(parent) = Path::new(db_path).parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let path = std::path::Path::new(db_path);
+        self.fs.create_dir_all(path)?;
         let conn = Connection::open(db_path)?;
         Self::apply_pragmas(&conn, true)?;
         Self::run_schema(&conn)?;
@@ -274,7 +282,8 @@ impl Lifecycle for SqliteStorage {
     }
 
     fn open(&mut self, db_path: &str) -> Result<(), CitadelError> {
-        if !Path::new(db_path).exists() {
+        let path = std::path::Path::new(db_path);
+        if !self.fs.exists(path) {
             return Err(CitadelError::NotFound(format!("database file not found: {}", db_path)));
         }
         let conn = Connection::open(db_path)?;

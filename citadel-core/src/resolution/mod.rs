@@ -1,7 +1,11 @@
-pub mod import_resolver;
-pub mod name_matcher;
-pub mod path_aliases;
-pub mod frameworks;
+//! Resolution module — types and orchestration API.
+//!
+//! Resolution is currently performed in TypeScript (`src/resolution/`).
+//! This module provides shared types that are used by the Rust side
+//! for edge construction and node ID generation. The Rust resolution
+//! logic (framework resolvers, import resolver, name matcher) was
+//! removed in v0.3 to eliminate dead code and is planned for Phase 6
+//! (native resolution bridge).
 
 use crate::types::*;
 
@@ -25,6 +29,7 @@ pub enum ResolutionOutcome {
 }
 
 /// Context passed to resolvers — abstracts away the storage backend.
+/// This is currently implemented only in TypeScript.
 pub trait ResolutionContext {
     fn get_nodes_in_file(&self, file_path: &str) -> Result<Vec<Node>, String>;
     fn get_nodes_by_name(&self, name: &str) -> Result<Vec<Node>, String>;
@@ -36,48 +41,4 @@ pub trait ResolutionContext {
     fn get_project_root(&self) -> &str;
     fn get_all_files(&self) -> Result<Vec<String>, String>;
     fn get_all_node_names(&self) -> Result<Vec<String>, String>;
-}
-
-/// A framework resolver: detect if the framework is present, resolve a ref.
-pub trait FrameworkResolver: Send + Sync {
-    fn name(&self) -> &str;
-    fn detect(&self, ctx: &dyn ResolutionContext) -> bool;
-    fn resolve(&self, r#ref: &UnresolvedRef, ctx: &dyn ResolutionContext) -> Option<ResolvedRef>;
-}
-
-/// Orchestrator: takes a batch of UnresolvedRef and returns ResolvedRef.
-pub struct ReferenceResolver {
-    frameworks: Vec<Box<dyn FrameworkResolver>>,
-}
-
-impl ReferenceResolver {
-    pub fn new(frameworks: Vec<Box<dyn FrameworkResolver>>) -> Self {
-        ReferenceResolver { frameworks }
-    }
-
-    pub fn resolve_one(&self, r#ref: &UnresolvedRef, ctx: &dyn ResolutionContext) -> Option<ResolvedRef> {
-        // Try framework resolvers first
-        for fw in &self.frameworks {
-            if let Some(resolved) = fw.resolve(r#ref, ctx)
-                && resolved.confidence >= 0.9 {
-                    return Some(resolved);
-                }
-        }
-        // Fallback to import resolution
-        if let Some(resolved) = import_resolver::resolve_import(r#ref, ctx) {
-            return Some(resolved);
-        }
-        // Fallback to name matching
-        name_matcher::match_name(r#ref, ctx)
-    }
-
-    pub fn resolve_batch(&self, refs: &[UnresolvedRef], ctx: &dyn ResolutionContext) -> Vec<ResolvedRef> {
-        let mut resolved = Vec::new();
-        for r in refs {
-            if let Some(r) = self.resolve_one(r, ctx) {
-                resolved.push(r);
-            }
-        }
-        resolved
-    }
 }

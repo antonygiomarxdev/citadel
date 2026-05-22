@@ -1,5 +1,6 @@
 pub mod search;
 
+use crate::fs::FileSystem;
 use crate::graph::GraphQuery;
 use crate::storage::Storage;
 use crate::types::*;
@@ -47,11 +48,12 @@ impl Default for FindContextOptions {
 /// The ContextBuilder: hybrid search + graph expansion + code blocks.
 pub struct ContextBuilder {
     storage: Box<dyn Storage>,
+    fs: Box<dyn FileSystem>,
 }
 
 impl ContextBuilder {
-    pub fn new(storage: Box<dyn Storage>) -> Self {
-        ContextBuilder { storage }
+    pub fn new(storage: Box<dyn Storage>, fs: Box<dyn FileSystem>) -> Self {
+        ContextBuilder { storage, fs }
     }
 
     /// Main entry point: given a natural language query, find relevant context.
@@ -208,7 +210,7 @@ impl ContextBuilder {
             }
 
             // Read the file and slice the relevant lines
-            if let Ok(source) = std::fs::read_to_string(&node.file_path) {
+            if let Ok(source) = self.fs.read_to_string(std::path::Path::new(&node.file_path)) {
                 let lines: Vec<&str> = source.lines().collect();
                 let start = node.start_line.saturating_sub(3).max(1) as usize;
                 let end = (node.end_line as usize + 3).min(lines.len());
