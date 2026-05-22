@@ -26,6 +26,7 @@ import { formatContextAsMarkdown, formatContextAsJson } from './formatter';
 import { logDebug } from '../errors';
 import { validatePathWithinRoot } from '../utils';
 import { isTestFile, extractSearchTerms, scorePathRelevance, getStemVariants } from '../search/query-utils';
+import { coLocationBoost, brevityBonus, multiTermBoost, camelCaseMultiTermScore, DEFAULT_SCORE_CONFIG } from './scoring';
 
 /**
  * Extract likely symbol names from a natural language query
@@ -329,7 +330,7 @@ export class ContextBuilder {
             const symbolCount = fileSymbolCounts.get(r.node.filePath)?.size || 1;
             return {
               ...r,
-              score: symbolCount > 1 ? r.score + (symbolCount - 1) * 20 : r.score,
+              score: r.score + coLocationBoost(symbolCount),
             };
           });
           exactMatches.sort((a, b) => b.score - a.score);
@@ -369,11 +370,8 @@ export class ContextBuilder {
         const matched: SearchResult[] = [];
         for (const r of prefixResults) {
           if (r.node.name.toLowerCase().startsWith(titleCased.toLowerCase())) {
-            // Favor shorter names: "AllocationService" (18 chars) over
-            // "AllocationBalancingRoundMetrics" (31 chars). Core classes tend
-            // to have concise names; test/helper classes are verbose.
-            const brevityBonus = Math.max(0, 10 - (r.node.name.length - titleCased.length) / 3);
-            matched.push({ ...r, score: r.score + 15 + brevityBonus });
+            const brevity = brevityBonus(r.node.name.length, titleCased.length);
+            matched.push({ ...r, score: r.score + 15 + brevity });
           }
         }
         matched.sort((a, b) => b.score - a.score);
@@ -427,7 +425,7 @@ export class ContextBuilder {
         textResults = Array.from(termResultsMap.values())
           .map(({ result, termHits }) => ({
             ...result,
-            score: result.score + (termHits - 1) * 5,
+            score: result.score + (termHits - 1) * DEFAULT_SCORE_CONFIG.textSearch.termHitBoostPerHit,
           }))
           .sort((a, b) => b.score - a.score)
           .slice(0, opts.searchLimit * 2);
@@ -472,7 +470,7 @@ export class ContextBuilder {
     if (!isTestQuery) {
       for (const result of searchResults) {
         if (isTestFile(result.node.filePath)) {
-          result.score *= 0.3;
+          result.score *= DEFAULT_SCORE_CONFIG.postProcess.testFileScoreDampen;
         }
       }
     }
@@ -529,13 +527,9 @@ export class ContextBuilder {
           if (groupMatches) matchCount++;
         }
         if (matchCount >= 2) {
-          // Multiplicative boost — 2 terms → 2x, 3 terms → 2.5x
-          result.score *= 1 + matchCount * 0.5;
+          result.score *= multiTermBoost(matchCount);
         } else if (!exactMatchIds.has(result.node.id)) {
-          // Mild dampen for single-term matches — they might be generic
-          // but could also be the right result (e.g., "Protocol" class for an IPC query).
-          // Exempt exact name matches: they are specific symbols the user queried for.
-          result.score *= 0.6;
+          result.score *= DEFAULT_SCORE_CONFIG.multiTerm.dampenSingleTerm;
         }
       }
       searchResults.sort((a, b) => b.score - a.score);
@@ -616,7 +610,7 @@ export class ContextBuilder {
         // Multi-term CamelCase matches are extremely relevant — a class matching
         // 3+ query terms in its name (e.g., ExtensionHostProcess) is almost
         // certainly what the user wants. Scale aggressively.
-        info.result.score = info.result.score * (1 + info.termCount) + (info.termCount - 1) * 30;
+        info.result.score = camelCaseMultiTermScore(info.result.score, info.termCount);
         camelResults.push(info.result);
       }
       camelResults.sort((a, b) => b.score - a.score);
