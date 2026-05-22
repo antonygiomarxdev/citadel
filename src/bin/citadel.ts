@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 /**
- * CodeGraph CLI
+ * Citadel CLI
  *
- * Command-line interface for CodeGraph code intelligence.
+ * Command-line interface for Citadel code intelligence.
  *
  * Usage:
- *   codegraph                    Run interactive installer (when no args)
- *   codegraph install            Run interactive installer
- *   codegraph init [path]        Initialize CodeGraph in a project
- *   codegraph uninit [path]      Remove CodeGraph from a project
- *   codegraph index [path]       Index all files in the project
- *   codegraph sync [path]        Sync changes since last index
- *   codegraph status [path]      Show index status
- *   codegraph query <search>     Search for symbols
- *   codegraph files [options]    Show project file structure
- *   codegraph context <task>     Build context for a task
- *   codegraph affected [files]   Find test files affected by changes
+ *   citadel                    Run interactive installer (when no args)
+ *   citadel install            Run interactive installer
+ *   citadel init [path]        Initialize Citadel in a project
+ *   citadel uninit [path]      Remove Citadel from a project
+ *   citadel index [path]       Index all files in the project
+ *   citadel sync [path]        Sync changes since last index
+ *   citadel status [path]      Show index status
+ *   citadel query <search>     Search for symbols
+ *   citadel files [options]    Show project file structure
+ *   citadel context <task>     Build context for a task
+ *   citadel affected [files]   Find test files affected by changes
  */
 
 import { Command } from 'commander';
@@ -33,10 +33,10 @@ async function loadCodeGraph(): Promise<typeof import('../index')> {
     return await import('../index');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`\x1b[31m${getGlyphs().err}\x1b[0m Failed to load CodeGraph modules.`);
+    console.error(`\x1b[31m${getGlyphs().err}\x1b[0m Failed to load Citadel modules.`);
     console.error(`\n  Node: ${process.version}  Platform: ${process.platform} ${process.arch}`);
     console.error(`\n  Error: ${msg}`);
-    console.error('\n  Try reinstalling with: npm install -g citadel-codegraph\n');
+    console.error('\n  Try reinstalling with: npm install -g citadel\n');
     process.exit(1);
   }
 }
@@ -78,11 +78,11 @@ if (process.argv.length === 2) {
 }
 
 process.on('uncaughtException', (error) => {
-  console.error('[CodeGraph] Uncaught exception:', error);
+  console.error('[Citadel] Uncaught exception:', error);
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[CodeGraph] Unhandled rejection:', reason);
+  console.error('[Citadel] Unhandled rejection:', reason);
 });
 
 function main() {
@@ -124,7 +124,7 @@ const chalk = {
 };
 
 program
-  .name('codegraph')
+  .name('citadel')
   .description('Code intelligence and knowledge graph for any codebase')
   .version(packageJson.version);
 
@@ -366,7 +366,7 @@ function writeErrorLog(projectPath: string, errors: Array<{ message: string; fil
   }
 
   const lines: string[] = [
-    `CodeGraph Error Log - ${new Date().toISOString()}`,
+    `Citadel Error Log - ${new Date().toISOString()}`,
     `${errorsByFile.size} files with errors`,
     '',
   ];
@@ -393,7 +393,7 @@ function writeErrorLog(projectPath: string, errors: Array<{ message: string; fil
  */
 program
   .command('init [path]')
-  .description('Initialize CodeGraph in a project directory')
+  .description('Initialize Citadel in a project directory')
   .option('-i, --index', 'Run initial indexing after initialization')
   .option('-v, --verbose', 'Show detailed worker lifecycle and memory info')
   .action(async (pathArg: string | undefined, options: { index?: boolean; verbose?: boolean }) => {
@@ -405,7 +405,7 @@ program
     try {
       if (isInitialized(projectPath)) {
         clack.log.warn(`Already initialized in ${projectPath}`);
-        clack.log.info('Use "codegraph index" to re-index or "codegraph sync" to update');
+        clack.log.info('Use "citadel index" to re-index or "citadel sync" to update');
         // Re-run agent surface wiring so re-running `init` is the
         // documented way to recover a project that's missing its
         // Cursor rules file (or future per-agent project surfaces).
@@ -460,7 +460,7 @@ program
 
         printIndexResult(clack, result, projectPath);
       } else {
-        clack.log.info('Run "codegraph index" to index the project');
+        clack.log.info('Run "citadel index" to index the project');
       }
 
       try {
@@ -481,14 +481,14 @@ program
  */
 program
   .command('uninit [path]')
-  .description('Remove CodeGraph from a project (deletes .codegraph/ directory)')
+  .description('Remove Citadel from a project (deletes .codegraph/ directory)')
   .option('-f, --force', 'Skip confirmation prompt')
   .action(async (pathArg: string | undefined, options: { force?: boolean }) => {
     const projectPath = resolveProjectPath(pathArg);
 
     try {
       if (!isInitialized(projectPath)) {
-        warn(`CodeGraph is not initialized in ${projectPath}`);
+        warn(`Citadel is not initialized in ${projectPath}`);
         return;
       }
 
@@ -544,8 +544,8 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
-        info('Run "codegraph init" first');
+        error(`Citadel not initialized in ${projectPath}`);
+        info('Run "citadel init" first');
         process.exit(1);
       }
 
@@ -612,7 +612,7 @@ program
     try {
       if (!isInitialized(projectPath)) {
         if (!options.quiet) {
-          error(`CodeGraph not initialized in ${projectPath}`);
+          error(`Citadel not initialized in ${projectPath}`);
         }
         process.exit(1);
       }
@@ -677,10 +677,10 @@ program
           console.log(JSON.stringify({ initialized: false, projectPath }));
           return;
         }
-        console.log(chalk.bold('\nCodeGraph Status\n'));
+        console.log(chalk.bold('\nCitadel Status\n'));
         info(`Project: ${projectPath}`);
         warn('Not initialized');
-        info('Run "codegraph init" to initialize');
+        info('Run "citadel init" to initialize');
         return;
       }
 
@@ -712,7 +712,7 @@ program
         return;
       }
 
-      console.log(chalk.bold('\nCodeGraph Status\n'));
+      console.log(chalk.bold('\nCitadel Status\n'));
 
       // Project info
       console.log(chalk.cyan('Project:'), projectPath);
@@ -767,7 +767,7 @@ program
         if (changes.removed.length > 0) {
           console.log(`  Removed:   ${changes.removed.length} files`);
         }
-        info('Run "codegraph sync" to update the index');
+        info('Run "citadel sync" to update the index');
       } else {
         success('Index is up to date');
       }
@@ -795,7 +795,7 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+        error(`Citadel not initialized in ${projectPath}`);
         process.exit(1);
       }
 
@@ -868,7 +868,7 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+        error(`Citadel not initialized in ${projectPath}`);
         process.exit(1);
       }
 
@@ -877,7 +877,7 @@ program
       let files = cg.getFiles();
 
       if (files.length === 0) {
-        info('No files indexed. Run "codegraph index" first.');
+        info('No files indexed. Run "citadel index" first.');
         cg.destroy();
         return;
       }
@@ -1071,7 +1071,7 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+        error(`Citadel not initialized in ${projectPath}`);
         process.exit(1);
       }
 
@@ -1100,7 +1100,7 @@ program
  */
 program
   .command('serve')
-  .description('Start CodeGraph as an MCP server for AI assistants')
+  .description('Start Citadel as an MCP server for AI assistants')
   .option('-p, --path <path>', 'Project path (optional for MCP mode, uses rootUri from client)')
   .option('--mcp', 'Run as MCP server (stdio transport)')
   .option('--no-watch', 'Disable the file watcher (no auto-sync; useful on slow filesystems like WSL2 /mnt drives)')
@@ -1123,14 +1123,14 @@ program
       } else {
         // Default: show info about MCP mode.
         // Use stderr so stdout stays clean for any piped/stdio usage.
-        console.error(chalk.bold('\nCodeGraph MCP Server\n'));
+        console.error(chalk.bold('\nCitadel MCP Server\n'));
         console.error(chalk.blue(getGlyphs().info) + ' Use --mcp flag to start the MCP server');
         console.error('\nTo use with Claude Code, add to your MCP configuration:');
         console.error(chalk.dim(`
 {
   "mcpServers": {
-    "codegraph": {
-      "command": "codegraph",
+    "citadel": {
+      "command": "citadel",
       "args": ["serve", "--mcp"]
     }
   }
@@ -1163,7 +1163,7 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+        error(`Citadel not initialized in ${projectPath}`);
         return;
       }
 
@@ -1206,7 +1206,7 @@ program
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`CodeGraph not initialized in ${projectPath}`);
+        error(`Citadel not initialized in ${projectPath}`);
         process.exit(1);
       }
 
@@ -1325,7 +1325,7 @@ program
  */
 program
   .command('install')
-  .description('Install codegraph MCP server into one or more agents (Claude Code, Cursor, Codex CLI, opencode)')
+  .description('Install citadel MCP server into one or more agents (Claude Code, Cursor, Codex CLI, opencode)')
   .option('-t, --target <ids>', 'Target agent(s): comma-separated ids, or "auto"|"all"|"none". Default: prompt')
   .option('-l, --location <where>', 'Install location: "global" or "local". Default: prompt')
   .option('-y, --yes', 'Non-interactive: defaults to --location=global --target=auto, auto-allow on')
