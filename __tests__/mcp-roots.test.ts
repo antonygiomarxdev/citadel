@@ -121,8 +121,8 @@ describe('MCP project resolution via roots/list (issue #196)', () => {
     // The status call now succeeds against the resolved project.
     const resp = await waitForMessage(messages, (m) => m.id === 1, 8000);
     const text = resp.result.content[0].text as string;
-    expect(text).toContain('CodeGraph Status');
-    expect(text).not.toContain('No CodeGraph project is loaded');
+    expect(text).toContain('Citadel Status');
+    expect(text).not.toContain('No Citadel project is loaded');
   }, 20000);
 
   it('returns an actionable error when there is no rootUri and no roots capability', async () => {
@@ -140,7 +140,7 @@ describe('MCP project resolution via roots/list (issue #196)', () => {
     const resp = await waitForMessage(messages, (m) => m.id === 1, 8000);
     const text = resp.result.content[0].text as string;
 
-    expect(text).toContain('No CodeGraph project is loaded');
+    expect(text).toContain('No Citadel project is loaded');
     expect(text).toContain('projectPath');
     expect(text).toContain('--path');
     // Names the directory it actually searched (the wrong cwd) so the user can
@@ -173,7 +173,7 @@ describe('MCP project resolution via roots/list (issue #196)', () => {
     const resp = await waitForMessage(messages, (m) => m.id === 1, 8000);
     const text = resp.result.content[0].text as string;
 
-    expect(text).toContain('CodeGraph Status');
+    expect(text).toContain('Citadel Status');
     // rootUri is a stronger signal than roots — we never needed to ask.
     expect(messages.some((m) => m.method === 'roots/list')).toBe(false);
   }, 20000);

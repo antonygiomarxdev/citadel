@@ -11,15 +11,36 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - **Complete Rust core migration**: The entire performance-critical pipeline now runs in Rust via napi-rs.
-  Benchmark against rust-lang/rust (36K files, 347K nodes, 679 MB index):
-  index 413s, search 369ms avg, context 0.9s. Search scales sub-linearly (3.8× slower for 124× more data).
-  - **Storage**: SQLite CRUD, FTS5 search, stats, metadata — full `Storage` trait with `SqliteStorage` implementation
+
+  **Benchmarks (Ryzen 7 5800X, NVMe, Node 24):**
+
+  | Project | Files | CodeGraph 0.7.9 | Citadel 0.8.0 |
+  |---------|-------|-----------------|---------------|
+  | VSCode src/vs (TS) | 6,122 | 213s | 213s |
+  | rustc (rust-lang/rust) | 36,198 | 403s | 432s (+7%) |
+
+  | Operation | CodeGraph | Citadel |
+  |-----------|-----------|---------|
+  | Search (warm, rustc) | 327ms | 354ms |
+  | Context (rustc) | 823ms | 1035ms |
+
+  **Why identical?** Both still use WASM tree-sitter for extraction — the bottleneck.
+  The Rust migration replaced storage + graph traversal. The 7% overhead is NAPI boundary cost.
+
+  **Native extraction (micro-benchmark, 103 TS files, 1MB):**
+  - WASM: ~700ms (est.), ~4,300 nodes → ~150 files/sec
+  - **Rust native + rayon: 146ms, 7,020 nodes → ~700 files/sec (5× faster, 63% more detail)**
+
+  Projection: once wired → VSCode 213s→35s, rustc 432s→70s.
+
+  **What's in Rust:**
+  - **Storage**: SQLite CRUD, FTS5 search, stats, metadata — full `Storage` trait with `SqliteStorage` implementation. Backend-agnostic → Rango-ready.
   - **Graph traversal**: BFS, DFS, shortest path, callers/callees, impact radius with ahash-accelerated visited sets
-  - **Tree-sitter parsing**: TypeScript and Python extractors using native `tree-sitter` crate (no WASM, no worker threads)
+  - **Tree-sitter parsing**: TypeScript and Python extractors using native `tree-sitter` crate (no WASM, no worker threads). Rayon parallel extraction compiled and NAPI-exposed — 5× faster in micro-benchmarks.
   - **Reference resolution**: Import resolver, name matcher (exact/qualified/fuzzy/instance-method), 9 framework detectors
   - **Context builder**: Hybrid search pipeline (symbol extraction, exact/prefix/FTS5 search, graph expansion, edge recovery)
-  - **Contract tests**: Any `Storage` backend can be validated against a standardized battery of lifecycle, CRUD, search, and traversal tests
-  - **Architecture**: `citadel-core` (pure Rust library) + `citadel-napi` (JS bindings). Backend-agnostic `Storage` trait enables future Rango integration as a drop-in replacement.
+  - **Contract tests**: Any `Storage` backend validated against lifecycle, CRUD, search, and traversal tests
+  - **Architecture**: `citadel-core` (pure Rust library) + `citadel-napi` (JS bindings). Backend-agnostic `Storage` trait enables future Rango integration.
 - **Renamed to Citadel**: Product, CLI, crates, and docs renamed from CodeGraph to Citadel.
 
 ### Added

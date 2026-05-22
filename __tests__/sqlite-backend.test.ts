@@ -25,7 +25,7 @@ describe('buildWasmFallbackBanner — fix-recipe content', () => {
     expect(banner).toContain('apt install build-essential');
     expect(banner).toContain('npm rebuild better-sqlite3');
     expect(banner).toContain('npm install better-sqlite3 --save');
-    expect(banner).toContain('codegraph status');
+    expect(banner).toContain('citadel status');
   });
 
   it('appends the native load error when one is provided', () => {

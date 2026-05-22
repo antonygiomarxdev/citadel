@@ -98,41 +98,54 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 </details>
 
-### Index Performance
+### Benchmarks
 
-Measured on a Ryzen 7 5800X, NVMe SSD, Node 24, Rust native backend:
+Measured on a Ryzen 7 5800X, NVMe SSD, Node 24.
 
-| Project | Files | Nodes | DB Size | Index Time | Search (warm) | Context |
-|---------|-------|-------|---------|------------|---------------|---------|
-| **citadel** (this repo) | 155 | 2,278 | 5 MB | 2.0s | 96ms | <1s |
-| **rustc** (rust-lang/rust) | 36,198 | 347,192 | 679 MB | 413s (7 min) | 369ms | 0.9s |
+#### Index Performance (cold, force re-index)
 
-**Key observations:**
-- **Search scales sub-linearly** — only 3.8× slower for 124× more data thanks to SQLite FTS5 B-tree indices
-- **Context is near-constant time** — graph expansion capped at 50 nodes regardless of project size
-- **Index is the bottleneck** — single-threaded tree-sitter parsing; parallel extraction coming in a future release
+| Project | Files | Nodes | CodeGraph 0.7.9 | Citadel 0.8.0 | Delta |
+|---------|-------|-------|-----------------|---------------|-------|
+| **citadel** (Rust+TS) | 155 | 2,278 | — | 2.0s | — |
+| **VSCode** src/vs | 6,122 | 222,599 | 213s | 213s | ~0% |
+| **rustc** (rust-lang/rust) | 36,198 | 347,192 | 403s | 432s | +7% |
 
-</details>
+**Why identical?** Both still use the same WASM tree-sitter extraction pipeline. The Rust migration replaced storage + graph traversal, but extraction — the bottleneck — remains in TypeScript/WASM. The 7% overhead on rustc is the NAPI boundary cost.
 
----
+#### Search & Context (warm, rustc 679MB index)
 
-## Key Features
+| Operation | CodeGraph 0.7.9 | Citadel 0.8.0 | Scaling vs rustc |
+|-----------|-----------------|---------------|------------------|
+| Search (simple) | 327ms avg | 354ms avg | 3.8× slower for 124× more data |
+| Context builder | 823ms | 1035ms | Near-constant time (capped graph expansion) |
 
-| | |
-|---|---|
-| **Smart Context Building** | One tool call returns entry points, related symbols, and code snippets — no expensive exploration agents |
-| **Full-Text Search** | Find code by name instantly across your entire codebase, powered by FTS5 |
-| **Impact Analysis** | Trace callers, callees, and the full impact radius of any symbol before making changes |
-| **Always Fresh** | File watcher uses native OS events (FSEvents/inotify/ReadDirectoryChangesW) with debounced auto-sync — the graph stays current as you code, zero config |
-| **19+ Languages** | TypeScript, JavaScript, Python, Go, Rust, Java, C#, PHP, Ruby, C, C++, Swift, Kotlin, Dart, Lua, Luau, Svelte, Liquid, Pascal/Delphi |
-| **Framework-aware Routes** | Recognizes web-framework routing files and links URL patterns to their handlers across 13 frameworks |
-| **100% Local** | No data leaves your machine. No API keys. No external services. SQLite database only |
+#### Native Extraction (micro-benchmark, 103 TS files, 1MB)
 
----
+| Extractor | Time | Nodes | Files/sec |
+|-----------|------|-------|-----------|
+| WASM (web-tree-sitter) | ~700ms (est.) | ~4,300 (est.) | ~150 |
+| **Rust native + rayon** | **146ms** | **7,020** | **~700** |
 
-## Rust Core Migration
+The native Rust extractor is **~5× faster** and extracts **63% more detail** (more node kinds, better qualified names). Rayon parallelizes across all CPU cores — near-linear speedup.
 
-Citadel's core engine now runs in **Rust** via napi-rs for maximum performance. The TypeScript shell (MCP server, CLI, installer) remains; all performance-critical paths bind to native Rust.
+**Projection**: once native extraction is stable and wired into the index pipeline, VSCode index drops from 213s → ~35s, rustc from 432s → ~70s.
+
+#### What the Migration Delivers Today
+
+| Layer | Before | After |
+|-------|--------|-------|
+| **Storage** | better-sqlite3 (C addon) | rusqlite via `Storage` trait — backend-agnostic, ready for Rango |
+| **Graph traversal** | Single-threaded JS BFS/DFS | Rust native with ahash-accelerated visited sets |
+| **Search** | SQLite FTS5 via JS adapter | FTS5 via rusqlite + hybrid keyword extraction |
+| **Context** | TypeScript ContextBuilder | Rust hybrid search + graph expansion |
+| **Parsing** | WASM tree-sitter in worker threads | ⚠️ Rust tree-sitter compiled but not yet wired (next release) |
+
+#### What's Next
+
+- **Stabilize native extraction** — fix segfaults on edge-case files
+- **Add Rust extractors** for Go, Java, C#, PHP, Ruby (TS/Python done)
+- **Wire native extraction** into the index pipeline → 5-7× faster indexing
+- **Rango integration** — `Storage` trait allows swapping SQLite for a distributed backend
 
 | What | Before (TypeScript) | After (Rust) |
 |------|-------------------|--------------|

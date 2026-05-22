@@ -134,7 +134,7 @@ program
 
 /**
  * Resolve project path from argument or current directory
- * Walks up parent directories to find nearest initialized CodeGraph project
+ * Walks up parent directories to find nearest initialized Citadel project
  * (must have .codegraph/codegraph.db, not just .codegraph/lessons.db)
  */
 function resolveProjectPath(pathArg?: string): string {
@@ -400,7 +400,7 @@ program
     const projectPath = path.resolve(pathArg || process.cwd());
     const clack = await importESM('@clack/prompts');
 
-    clack.intro('Initializing CodeGraph');
+    clack.intro('Initializing Citadel');
 
     try {
       if (isInitialized(projectPath)) {
@@ -498,7 +498,7 @@ program
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         const answer = await new Promise<string>((resolve) => {
           rl.question(
-            chalk.yellow(`${getGlyphs().warn} This will permanently delete all CodeGraph data. Continue? (y/N) `),
+            chalk.yellow(`${getGlyphs().warn} This will permanently delete all Citadel data. Continue? (y/N) `),
             resolve
           );
         });
@@ -523,7 +523,7 @@ program
         }
       } catch { /* non-fatal */ }
 
-      success(`Removed CodeGraph from ${projectPath}`);
+      success(`Removed Citadel from ${projectPath}`);
     } catch (err) {
       error(`Failed to uninitialize: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -627,7 +627,7 @@ program
       }
 
       const clack = await importESM('@clack/prompts');
-      clack.intro('Syncing CodeGraph');
+      clack.intro('Syncing Citadel');
 
       process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
       const progress = createShimmerProgress();

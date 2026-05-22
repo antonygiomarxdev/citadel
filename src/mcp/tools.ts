@@ -518,7 +518,7 @@ export class ToolHandler {
       if (!this.cg) {
         const searched = this.defaultProjectHint ?? process.cwd();
         throw new Error(
-          'No CodeGraph project is loaded for this session.\n' +
+          'No Citadel project is loaded for this session.\n' +
           `Searched for a .codegraph/ directory starting from: ${searched}\n` +
           'The index is likely fine — this is a working-directory detection issue: ' +
           "the MCP client launched the server outside your project and didn't report the " +
@@ -1313,7 +1313,7 @@ export class ToolHandler {
     const stats = cg.getStats();
 
     const lines: string[] = [
-      '## CodeGraph Status',
+      '## Citadel Status',
       '',
       `**Files indexed:** ${stats.fileCount}`,
       `**Total nodes:** ${stats.nodeCount}`,
