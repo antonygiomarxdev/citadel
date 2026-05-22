@@ -98,6 +98,22 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 </details>
 
+### Index Performance
+
+Measured on a Ryzen 7 5800X, NVMe SSD, Node 24, Rust native backend:
+
+| Project | Files | Nodes | DB Size | Index Time | Search (warm) | Context |
+|---------|-------|-------|---------|------------|---------------|---------|
+| **citadel** (this repo) | 155 | 2,278 | 5 MB | 2.0s | 96ms | <1s |
+| **rustc** (rust-lang/rust) | 36,198 | 347,192 | 679 MB | 413s (7 min) | 369ms | 0.9s |
+
+**Key observations:**
+- **Search scales sub-linearly** — only 3.8× slower for 124× more data thanks to SQLite FTS5 B-tree indices
+- **Context is near-constant time** — graph expansion capped at 50 nodes regardless of project size
+- **Index is the bottleneck** — single-threaded tree-sitter parsing; parallel extraction coming in a future release
+
+</details>
+
 ---
 
 ## Key Features

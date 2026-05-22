@@ -10,7 +10,9 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- **Complete Rust core migration**: The entire performance-critical pipeline now runs in Rust via napi-rs:
+- **Complete Rust core migration**: The entire performance-critical pipeline now runs in Rust via napi-rs.
+  Benchmark against rust-lang/rust (36K files, 347K nodes, 679 MB index):
+  index 413s, search 369ms avg, context 0.9s. Search scales sub-linearly (3.8× slower for 124× more data).
   - **Storage**: SQLite CRUD, FTS5 search, stats, metadata — full `Storage` trait with `SqliteStorage` implementation
   - **Graph traversal**: BFS, DFS, shortest path, callers/callees, impact radius with ahash-accelerated visited sets
   - **Tree-sitter parsing**: TypeScript and Python extractors using native `tree-sitter` crate (no WASM, no worker threads)

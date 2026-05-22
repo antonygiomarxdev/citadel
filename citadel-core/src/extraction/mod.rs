@@ -130,3 +130,25 @@ pub mod tree_sitter_helpers {
         }
     }
 }
+
+/// Parallel file extraction using rayon.
+/// Each file is parsed independently — tree-sitter is CPU-bound,
+/// so par_iter() gives near-linear speedup on multi-core machines.
+///
+/// Returns results in the same order as the input files.
+pub fn extract_files_parallel(
+    files: &[(String, String)],
+    framework_names: &[String],
+) -> Vec<ExtractionResult> {
+    use rayon::prelude::*;
+
+    files.par_iter().map(|(file_path, source)| {
+        let language = detect_language(file_path);
+        if let Some(extractor) = languages::get_extractor(&language) {
+            extractor.extract(source, file_path, language.clone(), framework_names)
+        } else {
+            // Fallback: return empty result with file node only
+            make_empty_result(file_path, language)
+        }
+    }).collect()
+}
