@@ -662,7 +662,7 @@ program
   });
 
 /**
- * codegraph status [path]
+ * citadel status [path]
  */
 program
   .command('status [path]')

@@ -60,7 +60,7 @@ export function buildWasmFallbackBanner(nativeError?: string): string {
     'Or force-include as a hard dependency on any platform:',
     '  npm install better-sqlite3 --save',
     '',
-    'Verify after fix: `codegraph status` should show `Backend: native`.',
+    'Verify after fix: `citadel status` should show `Backend: native`.',
   ];
   if (nativeError) {
     lines.push('', `Native load error: ${nativeError}`);

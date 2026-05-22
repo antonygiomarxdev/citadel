@@ -17,7 +17,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { CodeGraph } from '../src';
 
-const BIN = path.resolve(__dirname, '../dist/bin/codegraph.js');
+const BIN = path.resolve(__dirname, '../dist/bin/citadel.js');
 
 function spawnServer(cwd: string): ChildProcessWithoutNullStreams {
   return spawn(process.execPath, [BIN, 'serve', '--mcp'], {
