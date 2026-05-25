@@ -142,6 +142,7 @@ jobs:
           cache: npm
 
       - name: Update package.json version
+        shell: bash
         run: |
           VERSION="${{ needs.semver.outputs.new_version }}"
           VERSION_CLEAN="${VERSION#v}"
