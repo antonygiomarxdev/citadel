@@ -1,0 +1,281 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: "20"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      commit_sha: ${{ steps.set-sha.outputs.commit_sha }}
+      trigger_type: ${{ steps.set-sha.outputs.trigger_type }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set commit SHA and trigger type
+        id: set-sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHA="${{ github.sha }}"
+            TYPE="manual"
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            TYPE="auto"
+          fi
+          echo "Using commit SHA: $SHA"
+          echo "Trigger type: $TYPE"
+          echo "commit_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "trigger_type=$TYPE" >> "$GITHUB_OUTPUT"
+
+  semver:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      should_release: ${{ steps.version.outputs.should_release }}
+      notes_source: ${{ steps.version.outputs.notes_source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ needs.prepare.outputs.trigger_type }}" = "manual" ]; then
+            # Manual trigger: read version from package.json
+            VERSION=$(node -p "require('./package.json').version")
+            echo "new_version=v$VERSION" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "notes_source=changelog" >> "$GITHUB_OUTPUT"
+            echo "Manual release of version v$VERSION"
+          else
+            # Automated trigger: determine version from conventional commits
+            git fetch --tags --force
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            echo "Last tag: $LAST_TAG"
+
+            MAJOR=0; MINOR=0; PATCH=0
+            BASE="${LAST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+
+            if [ "$LAST_TAG" = "v0.0.0" ]; then
+              COMMITS=$(git log --oneline --format="%s" 2>/dev/null || true)
+            else
+              COMMITS_COUNT=$(git rev-list --count "$LAST_TAG"..HEAD 2>/dev/null || echo "0")
+              if [ "$COMMITS_COUNT" -eq 0 ]; then
+                echo "No new commits since last tag $LAST_TAG. Skipping release."
+                echo "should_release=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              COMMITS=$(git log "$LAST_TAG"..HEAD --oneline --format="%s" 2>/dev/null || true)
+            fi
+
+            BUMP="patch"
+            while IFS= read -r msg; do
+              [ -z "$msg" ] && continue
+              if echo "$msg" | grep -qiE '^[a-z]+(\([^)]*\))?!:|breaking change'; then
+                BUMP="major"
+                break
+              fi
+              if echo "$msg" | grep -qiE '^feat(\([^)]*\))?:'; then
+                BUMP="minor"
+              fi
+            done <<< "$COMMITS"
+
+            case "$BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "notes_source=auto" >> "$GITHUB_OUTPUT"
+            echo "Automated release of version $NEW_VERSION"
+          fi
+
+  build-napi:
+    needs: [prepare, semver]
+    if: ${{ needs.semver.outputs.should_release == 'true' }}
+    name: napi-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64-gnu
+            runner: ubuntu-latest
+            napi-triple: x86_64-unknown-linux-gnu
+          - target: darwin-arm64
+            runner: macos-latest
+            napi-triple: aarch64-apple-darwin
+          - target: darwin-x64
+            runner: macos-latest
+            napi-triple: x86_64-apple-darwin
+          - target: win32-x64-msvc
+            runner: windows-latest
+            napi-triple: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Update package.json version
+        run: |
+          VERSION="${{ needs.semver.outputs.new_version }}"
+          VERSION_CLEAN="${VERSION#v}"
+          npm version "$VERSION_CLEAN" --no-git-tag-version
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.napi-triple }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build napi binding for ${{ matrix.target }}
+        run: npx napi build --manifest-path citadel-napi/Cargo.toml --platform --release --target ${{ matrix.napi-triple }} --js native.js --dts native.d.ts --output-dir dist
+
+      - name: Upload napi binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: dist/*.node
+
+  build-typescript:
+    needs: [prepare, semver]
+    if: ${{ needs.semver.outputs.should_release == 'true' }}
+    name: build-ts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Update package.json version
+        run: |
+          VERSION="${{ needs.semver.outputs.new_version }}"
+          VERSION_CLEAN="${VERSION#v}"
+          npm version "$VERSION_CLEAN" --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    needs: [prepare, semver, build-napi, build-typescript]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Update package.json version
+        run: |
+          VERSION="${{ needs.semver.outputs.new_version }}"
+          VERSION_CLEAN="${VERSION#v}"
+          npm version "$VERSION_CLEAN" --no-git-tag-version
+
+      - name: Install zip/unzip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip unzip
+
+      - name: Download all napi binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Download TypeScript dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: List dist contents
+        run: ls -lh dist/
+
+      - name: Generate or extract release notes
+        id: notes
+        run: |
+          TAG="${{ needs.semver.outputs.new_version }}"
+          VERSION_CLEAN="${TAG#v}"
+          if [ "${{ needs.semver.outputs.notes_source }}" = "changelog" ]; then
+            node scripts/extract-release-notes.mjs "$VERSION_CLEAN" > notes.md 2>/dev/null \
+              || node scripts/extract-release-notes.mjs Unreleased > notes.md 2>/dev/null || true
+            if [ ! -s notes.md ]; then
+              echo "::error::No release notes in CHANGELOG.md for [$VERSION_CLEAN] or [Unreleased]."
+              exit 1
+            fi
+            echo "use_notes_file=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_notes_file=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.semver.outputs.new_version }}"
+          # Build a tarball with the full dist (TS + all napi binaries) so
+          # install.sh/install.ps1 can grab one archive per platform.
+          mkdir -p release
+          tar --no-xattrs -czf "release/citadel-${TAG}.tar.gz" -C dist .
+
+          if [ "${{ steps.notes.outputs.use_notes_file }}" = "true" ]; then
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --clobber
+            else
+              gh release create "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --title "$TAG" --notes-file notes.md
+            fi
+          else
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --clobber
+            else
+              gh release create "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --title "$TAG" --generate-notes
+            fi
+          fi
