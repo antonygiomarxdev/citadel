@@ -96,3 +96,26 @@ jobs:
 
       - name: Rust clippy
         run: cargo clippy --all -- -D warnings
+
+      - name: Validate commit messages (Conventional Commits)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }} --depth=100
+            COMMITS=$(git log origin/${{ github.base_ref }}..HEAD --oneline --format="%s")
+          else
+            COMMITS=$(git log -1 --oneline --format="%s")
+          fi
+          
+          echo "Checking commits:"
+          echo "$COMMITS"
+          
+          REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release)(\([^)]+\))?!?: .+$"
+          
+          while IFS= read -r msg; do
+            [ -z "$msg" ] && continue
+            if ! echo "$msg" | grep -qiE "$REGEX"; then
+              echo "ERROR: Invalid commit message '$msg'"
+              echo "Commit messages must follow Conventional Commits specification (e.g., 'feat(parser): add support for Luau')."
+              exit 1
+            fi
+          done <<< "$COMMITS"

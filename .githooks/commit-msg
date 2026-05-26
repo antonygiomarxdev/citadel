@@ -1,0 +1,28 @@
+#!/bin/sh
+# Git commit-msg hook to validate Conventional Commits format.
+
+commit_msg_file="$1"
+commit_msg=$(cat "$commit_msg_file")
+
+# Skip empty messages or merge commits
+if [ -z "$commit_msg" ] || echo "$commit_msg" | grep -qiE "^Merge branch"; then
+  exit 0
+fi
+
+# Conventional Commits regex
+REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release)(\([^)]+\))?!?: .+$"
+
+if ! echo "$commit_msg" | grep -qiE "$REGEX"; then
+  echo "❌ ERROR: Invalid commit message format!"
+  echo "--------------------------------------------------------"
+  echo "Your commit message: '$commit_msg'"
+  echo "--------------------------------------------------------"
+  echo "Commit messages must follow the Conventional Commits specification:"
+  echo "  <type>(<scope>)?: <description>"
+  echo ""
+  echo "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, release"
+  echo "Example: feat(parser): add support for Luau"
+  echo "Example (breaking change): fix(db)!: change primary key types"
+  echo "--------------------------------------------------------"
+  exit 1
+fi
