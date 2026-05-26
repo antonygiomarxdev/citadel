@@ -269,14 +269,14 @@ jobs:
 
           if [ "${{ steps.notes.outputs.use_notes_file }}" = "true" ]; then
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --clobber
+              gh release upload "$TAG" dist/citadel-native.* release/citadel-*.tar.gz --clobber
             else
-              gh release create "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --title "$TAG" --notes-file notes.md
+              gh release create "$TAG" dist/citadel-native.* release/citadel-*.tar.gz --title "$TAG" --notes-file notes.md
             fi
           else
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --clobber
+              gh release upload "$TAG" dist/citadel-native.* release/citadel-*.tar.gz --clobber
             else
-              gh release create "$TAG" dist/citadel-native-* release/citadel-*.tar.gz --title "$TAG" --generate-notes
+              gh release create "$TAG" dist/citadel-native.* release/citadel-*.tar.gz --title "$TAG" --generate-notes
             fi
           fi
