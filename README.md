@@ -24,11 +24,19 @@
 
 ### Get Started
 
+Install Citadel as a standalone binary in your system's PATH. No Node.js or npm required:
+
+**macOS / Linux:**
 ```bash
-npx citadel
+curl -fsSL https://raw.githubusercontent.com/antonygiomarxdev/citadel/main/install.sh | sh
 ```
 
-<sub>Interactive installer auto-configures your agent(s) — Claude Code, Cursor, Codex CLI, opencode</sub>
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/antonygiomarxdev/citadel/main/install.ps1 | iex
+```
+
+<sub>This automatically downloads the native binary, places it in your PATH, and enables auto-configuration for your AI agent(s) (Claude Code, Cursor, Codex CLI, or opencode).</sub>
 
 #### Initialize Projects
 
@@ -198,8 +206,14 @@ Citadel detects web-framework routing files and emits `route` nodes linked by `r
 
 ### 1. Run the Installer
 
+**macOS / Linux:**
 ```bash
-npx citadel
+curl -fsSL https://raw.githubusercontent.com/antonygiomarxdev/citadel/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/antonygiomarxdev/citadel/main/install.ps1 | iex
 ```
 
 The installer will:
