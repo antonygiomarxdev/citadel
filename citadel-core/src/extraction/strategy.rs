@@ -36,8 +36,7 @@ impl ExtractionStrategy for ParallelExtractor {
             return files.iter().map(|f| extract_single(f, fw)).collect();
         }
 
-        let chunk = (files.len() + self.num_workers - 1) / self.num_workers;
-        let chunk = chunk.max(1);
+        let chunk = files.len().div_ceil(self.num_workers).max(1);
 
         files
             .par_chunks(chunk)

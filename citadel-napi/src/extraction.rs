@@ -69,14 +69,6 @@ pub struct JsExtractionError {
     pub column: Option<u32>,
 }
 
-/// Combined result from extract_files_from_disk: results + content hashes.
-#[napi(object)]
-#[derive(Debug, Clone)]
-pub struct JsExtractFromDiskResult {
-    pub results: Vec<JsExtractionResult>,
-    pub content_hashes: Vec<String>,
-}
-
 fn node_to_js(node: &Node) -> JsNode {
     JsNode {
         id: node.id.clone(),
@@ -141,30 +133,6 @@ fn result_to_js(r: citadel_core::extraction::ExtractionResult) -> JsExtractionRe
         edges: r.edges.iter().map(edge_to_js).collect(),
         unresolved_references: r.unresolved_references.iter().map(unresolved_to_js).collect(),
         errors: r.errors.iter().map(error_to_js).collect(),
-    }
-}
-
-/// Extracts symbols from files read from disk in parallel (rayon).
-/// File reads + SHA256 hashing happen in parallel, then extraction is
-/// parallelized with one tree_sitter::Parser per worker thread.
-///
-/// Returns results + content hashes in input order.
-#[napi]
-pub fn extract_files_from_disk(
-    paths: Vec<String>,
-    root_dir: String,
-    framework_names: Vec<String>,
-    num_workers: Option<u32>,
-) -> JsExtractFromDiskResult {
-    let nw = num_workers.unwrap_or(0) as usize;
-    let (results, content_hashes) = if nw > 1 {
-        extraction::extract_files_from_disk_parallel(&paths, &root_dir, &framework_names, nw)
-    } else {
-        extraction::extract_files_from_disk(&paths, &root_dir, &framework_names)
-    };
-    JsExtractFromDiskResult {
-        results: results.into_iter().map(result_to_js).collect(),
-        content_hashes,
     }
 }
 

@@ -1,3 +1,5 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ptr;
@@ -114,7 +116,6 @@ pub fn insert_nodes_multi_values(db: *mut ffi::sqlite3, nodes: &[&Node]) -> Resu
     let start = std::time::Instant::now();
 
     const BATCH: usize = 500;
-    let mut total: u64 = 0;
     let sql_prefix = "INSERT OR REPLACE INTO nodes(id,kind,name,qualified_name,file_path,language,start_line,end_line,start_column,end_column,docstring,signature,visibility,is_exported,is_async,is_static,is_abstract,decorators,type_parameters,updated_at) VALUES ";
 
     for chunk in nodes.chunks(BATCH) {
@@ -125,11 +126,10 @@ pub fn insert_nodes_multi_values(db: *mut ffi::sqlite3, nodes: &[&Node]) -> Resu
             append_node_row(&mut sql, n);
         }
         exec_raw(db, &sql)?;
-        total += chunk.len() as u64;
     }
 
-    Ok((std::time::Instant::now().duration_since(start).as_micros() as u64)
-       .checked_sub(total * 0).unwrap_or(0))
+    let elapsed = std::time::Instant::now().duration_since(start).as_micros() as u64;
+    Ok(elapsed)
 }
 
 // ── Edge insert (prepared statement via bind/step/reset) ──

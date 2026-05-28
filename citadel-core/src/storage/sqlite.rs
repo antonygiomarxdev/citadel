@@ -298,10 +298,8 @@ impl Lifecycle for SqliteStorage {
 
         let path = std::path::Path::new(db_path);
         let was_new = !self.fs.exists(path);
-        if was_new {
-            if let Some(parent) = path.parent() {
-                self.fs.create_dir_all(parent)?;
-            }
+        if was_new && let Some(parent) = path.parent() {
+            self.fs.create_dir_all(parent)?;
         }
 
         let c_path = CString::new(db_path).map_err(|e| CitadelError::Database(e.to_string()))?;
@@ -1468,7 +1466,6 @@ impl FullStore for SqliteStorage {
         let mut t_nodes = t0.elapsed().as_millis() as u64;
         let mut t_edges = t_nodes;
         let mut t_refs = t_nodes;
-        let t_files;
 
         // ── Nodes: multi-VALUES in batches of 500 ──
         if !nodes.is_empty() {
@@ -1575,7 +1572,7 @@ impl FullStore for SqliteStorage {
             }
         }
 
-        t_files = t0.elapsed().as_millis() as u64;
+        let t_files = t0.elapsed().as_millis() as u64;
         tx.commit()?;
 
         if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open("/tmp/cg-profile.log") {
@@ -1583,7 +1580,7 @@ impl FullStore for SqliteStorage {
             let _ = writeln!(f, "DB-PROFILE: nodes={}ms edges={}ms refs={}ms files={}ms ({} nodes, {} edges, {} refs, {} files) nchunks={} echunks={}",
                 t_nodes, t_edges - t_nodes, t_refs - t_edges, t_files - t_refs,
                 nodes.len(), edges.len(), unresolved_refs.len(), files.len(),
-                (nodes.len() + 499) / 500, (edges.len() + 499) / 500);
+                nodes.len().div_ceil(500), edges.len().div_ceil(500));
         }
 
         // Restore safe PRAGMAs after bulk insert
@@ -1677,7 +1674,7 @@ impl FullStore for SqliteStorage {
                     let mtime = meta.modified().ok()
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_millis() as i64).unwrap_or(0);
-                    (meta.len() as u64, mtime)
+                    (meta.len(), mtime)
                 }
                 Err(_) => (0, 0),
             };
@@ -1871,7 +1868,7 @@ impl FullStore for SqliteStorage {
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_millis() as i64)
                         .unwrap_or(0);
-                    (meta.len() as u64, mtime)
+                    (meta.len(), mtime)
                 }
                 Err(_) => (0, 0),
             };

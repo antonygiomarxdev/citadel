@@ -168,6 +168,7 @@ pub trait FullStore: Lifecycle + NodeStore + EdgeStore + FileStore
     /// (same content hash already present). The default implementation delegates
     /// to individual CRUD trait methods. Storage backends SHOULD override this
     /// with a single-transaction version for performance.
+    #[allow(clippy::too_many_arguments)]
     fn store_file_extraction(
         &self,
         path: &str,
@@ -180,10 +181,10 @@ pub trait FullStore: Lifecycle + NodeStore + EdgeStore + FileStore
         root_dir: &str,
     ) -> Result<bool, CitadelError> {
         // Skip if content hash matches cached data
-        if let Ok(Some(existing)) = self.get_file_by_path(path) {
-            if existing.content_hash == content_hash {
-                return Ok(false);
-            }
+        if let Ok(Some(existing)) = self.get_file_by_path(path)
+            && existing.content_hash == content_hash
+        {
+            return Ok(false);
         }
 
         // Delete old data for this file
@@ -233,7 +234,7 @@ pub trait FullStore: Lifecycle + NodeStore + EdgeStore + FileStore
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0);
-                (meta.len() as u64, mtime)
+                (meta.len(), mtime)
             }
             Err(_) => (0, 0),
         };
