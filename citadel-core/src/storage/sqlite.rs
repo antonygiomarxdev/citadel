@@ -1468,7 +1468,7 @@ impl FullStore for SqliteStorage {
         let mut t_nodes = t0.elapsed().as_millis() as u64;
         let mut t_edges = t_nodes;
         let mut t_refs = t_nodes;
-        let mut t_files = t_nodes;
+        let t_files;
 
         // ── Nodes: multi-VALUES in batches of 500 ──
         if !nodes.is_empty() {
@@ -1620,7 +1620,7 @@ impl FullStore for SqliteStorage {
         let mut all_files: Vec<FileRecord> = Vec::with_capacity(results.len());
         let mut files_skipped: u32 = 0;
         let mut files_indexed: u32 = 0;
-        let mut errors: Vec<String> = Vec::new();
+        let errors: Vec<String> = Vec::new();
 
         for (i, &(path, content_hash)) in paths_and_hashes.iter().enumerate() {
             let result = &results[i];
