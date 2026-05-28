@@ -1,13 +1,6 @@
 use crate::types::*;
+use crate::util;
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-pub fn now_ts() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
 
 pub fn make_node(id: &str, name: &str, kind: NodeKind, file_path: &str, language: Language) -> Node {
     Node {
@@ -30,7 +23,7 @@ pub fn make_node(id: &str, name: &str, kind: NodeKind, file_path: &str, language
         is_abstract: false,
         decorators: None,
         type_parameters: None,
-        updated_at: now_ts(),
+        updated_at: util::now_ts(),
     }
 }
 
@@ -52,8 +45,8 @@ pub fn make_file(path: &str, language: Language) -> FileRecord {
         content_hash: format!("hash_{path}"),
         language,
         size: 100,
-        modified_at: now_ts(),
-        indexed_at: now_ts(),
+        modified_at: util::now_ts(),
+        indexed_at: util::now_ts(),
         node_count: 0,
         errors: None,
     }

@@ -116,7 +116,7 @@ fn extract_node(
         end_column: node.end_position().column as u32,
         docstring: None, signature: if sig.is_empty() { None } else { Some(sig) },
         visibility: None, is_exported: false, is_async: false, is_static: false, is_abstract: false,
-        decorators: None, type_parameters: None, updated_at: crate::storage::test_utils::now_ts(),
+        decorators: None, type_parameters: None, updated_at: crate::util::now_ts(),
     });
     result.edges.push(Edge {
         source: parent_id, target: node_id.clone(),

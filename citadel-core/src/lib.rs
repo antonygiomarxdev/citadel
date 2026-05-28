@@ -1,4 +1,5 @@
 pub mod types;
+pub mod util;
 pub mod constants;
 pub mod error;
 pub mod fs;

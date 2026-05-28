@@ -2,12 +2,12 @@
 use crate::extraction::*;
 use crate::extraction::tree_sitter_helpers::*;
 use crate::types::*;
-use tree_sitter::{Parser, Node as TsNode};
+use tree_sitter::Node as TsNode;
 
 pub struct PythonExtractor;
 
 impl LanguageExtractor for PythonExtractor {
-    fn extract(&self, source: &str, file_path: &str, language: Language, _framework_names: &[String]) -> ExtractionResult {
+    fn extract(&self, source: &str, file_path: &str, language: Language, _framework_names: &[String], parser: &mut tree_sitter::Parser) -> ExtractionResult {
         let mut result = ExtractionResult {
             nodes: Vec::new(),
             edges: Vec::new(),
@@ -16,7 +16,6 @@ impl LanguageExtractor for PythonExtractor {
         };
         let source_bytes = source.as_bytes();
 
-        let mut parser = Parser::new();
         parser.set_language(&tree_sitter_python::LANGUAGE.into())
             .map_err(|e| result.errors.push(ExtractionError { message: format!("set_language: {e}"), kind: ExtractionErrorKind::TreeSitterError, line: None, column: None }))
             .ok();
@@ -33,7 +32,7 @@ impl LanguageExtractor for PythonExtractor {
             start_line: 0, end_line: 0, start_column: 0, end_column: 0,
             docstring: None, signature: None, visibility: None,
             is_exported: false, is_async: false, is_static: false, is_abstract: false,
-            decorators: None, type_parameters: None, updated_at: crate::storage::test_utils::now_ts(),
+            decorators: None, type_parameters: None, updated_at: crate::util::now_ts(),
         });
         let mut scope_stack: Vec<String> = vec![file_id.clone()];
 
@@ -102,7 +101,7 @@ fn extract_py_node(
         start_column: node.start_position().column as u32, end_column: node.end_position().column as u32,
         docstring: None, signature: Some(get_node_text(node, source).lines().next().unwrap_or("").to_string()),
         visibility: None, is_exported: false, is_async: extract_py_async(node), is_static: false, is_abstract: false,
-        decorators: None, type_parameters: None, updated_at: crate::storage::test_utils::now_ts(),
+        decorators: None, type_parameters: None, updated_at: crate::util::now_ts(),
     });
     result.edges.push(Edge {
         source: parent_id, target: node_id,
@@ -122,10 +121,10 @@ fn extract_py_import(
 ) {
     // Python: `from X import Y` or `import X`
     let text = get_node_text(node, source);
-    let re = regex_lite::Regex::new(r"from\s+(\S+)\s+import\s+(.+)").unwrap();
+    let re = regex_lite::Regex::new(r"from\s+(\S+)\s+import\s+(.+)").expect("hardcoded regex");
     if let Some(caps) = re.captures(text) {
-        let names = caps.get(2).unwrap().as_str();
-        for name in names.split(',') {
+        let Some(names) = caps.get(2) else { return; };
+        for name in names.as_str().split(',') {
             let name = name.trim();
             if name.is_empty() || name == "*" { continue; }
             result.unresolved_references.push(UnresolvedRef {

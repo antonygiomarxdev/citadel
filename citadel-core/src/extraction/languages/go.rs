@@ -2,15 +2,13 @@
 use crate::extraction::*;
 use crate::extraction::languages::generic::{walk, ExtractorConfig};
 use crate::types::*;
-use tree_sitter::Parser;
 
 pub struct GoExtractor;
 
 impl LanguageExtractor for GoExtractor {
-    fn extract(&self, source: &str, file_path: &str, language: Language, _framework_names: &[String]) -> ExtractionResult {
+    fn extract(&self, source: &str, file_path: &str, language: Language, _framework_names: &[String], parser: &mut tree_sitter::Parser) -> ExtractionResult {
         let mut result = make_empty_result(file_path, language.clone());
 
-        let mut parser = Parser::new();
         if let Err(e) = parser.set_language(&tree_sitter_go::LANGUAGE.into()) {
             result.errors.push(ExtractionError { message: format!("set_language: {e}"), kind: ExtractionErrorKind::TreeSitterError, line: None, column: None });
             return result;

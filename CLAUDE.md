@@ -147,6 +147,23 @@ The napi `Database` class uses `Box<dyn Storage>` (not a concrete type), with a 
 
 ### Rust Backend Migration Status
 
+| Layer | Rust impl | Status |
+|-------|-----------|--------|
+| Storage (rusqlite + FTS5) | `citadel-core/src/storage/sqlite.rs` | ✅ Wired via NAPI `Database` class |
+| Graph traversal (BFS/DFS/callers/etc) | `citadel-core/src/graph/mod.rs` | ✅ Blanket impl over `NodeStore + EdgeStore` |
+| Context builder (hybrid search) | `citadel-core/src/context/` | ✅ Markdown + JSON output |
+| NAPI bindings | `citadel-napi/src/database.rs` | ✅ ~50 methods exposed |
+| Extraction: TS/JS/TSX/JSX | `citadel-core/src/extraction/languages/typescript.rs` | ⚠️ Fast path exists, segfaults on edge cases |
+| Extraction: Python | `citadel-core/src/extraction/languages/python.rs` | ⚠️ Idem |
+| Extraction: Go | `citadel-core/src/extraction/languages/go.rs` | 🆕 Compiled, not in NATIVE_EXTRACTOR_LANGS |
+| Extraction: Rust | `citadel-core/src/extraction/languages/rust.rs` | 🆕 Idem |
+| Extraction: Java | `citadel-core/src/extraction/languages/java.rs` | 🆕 Idem |
+| Extraction: C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, Luau | — | ❌ Only TS/WASM |
+| Reference resolution | `citadel-core/src/resolution/mod.rs` | 🟡 Types only, logic still in TS |
+| Native extraction NAPI bridge | `citadel-napi/src/extraction.rs` | ✅ `extractFiles()` exposed |
+
+**Open issues**: #10 (segfaults), #11 (missing extractors), #12 (NAPI overhead)
+
 ## House rules
 
 - The `0.7.x` line is in active multi-agent rollout. Any change to `src/installer/` (especially `targets/`) needs corresponding test coverage and a CHANGELOG entry — installer regressions break every new install silently.

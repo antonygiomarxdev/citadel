@@ -61,15 +61,19 @@ Once the native extraction fast path is stabilized and wired:
 | Storage | better-sqlite3 (C addon) | rusqlite via `Storage` trait | ✅ Wired |
 | Graph traversal | JS BFS/DFS | Rust native + ahash | ✅ Wired |
 | Context builder | TS ContextBuilder | Rust hybrid search | ✅ Wired |
-| Reference resolution | TS import resolver | Rust name matcher | ✅ Wired |
-| Extraction | WASM tree-sitter | Rust native tree-sitter + rayon | ⚠️ Compiled, NAPI-exposed, not wired (segfaults on edge cases) |
+| Reference resolution | TS import resolver | Rust types only (trait + structs) | 🟡 Types in Rust, logic in TS |
+| Extraction (TS/JS/Python) | WASM tree-sitter | Rust native tree-sitter + rayon | ⚠️ NAPI-exposed + fast path in TS, segfaults on edge cases block prod |
+| Extraction (Go, Rust, Java) | WASM tree-sitter | Rust native (generic-based) | 🆕 Compiled, not in NATIVE_EXTRACTOR_LANGS yet |
+| Extraction (rest: C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, Luau) | WASM tree-sitter | — | ❌ Only TS extractors |
 
 ## What's Next
 
-1. **Stabilize native extraction** — fix segfaults, handle edge-case files
-2. **Add Rust extractors** — Go, Java, C#, PHP, Ruby, C, C++ (TS/Python done)
-3. **Wire native extraction** into index pipeline → 5-7× faster indexing
-4. **Rango integration** — `Storage` trait allows swapping SQLite for a distributed backend without TS-side changes
+1. **Fix segfaults in native extraction** — debug edge-case files blocking prod activation
+2. **Add Rust extractors for remaining languages** — C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, Luau
+3. **Wire Go/Rust/Java extractors** into `NATIVE_EXTRACTOR_LANGS` in `src/extraction/index.ts`
+4. **Implement Rust resolution** — move import resolver, name matcher, framework resolvers out of TS
+5. **Reduce NAPI boundary overhead** — batch queries, prepared statement caching (#12)
+6. **Rango integration** — `Storage` trait allows swapping SQLite for a distributed backend without TS-side changes
 
 ## Methodology
 

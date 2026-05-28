@@ -1,10 +1,22 @@
 use std::str::FromStr;
 use std::sync::Mutex;
 
+use citadel_core::extraction;
 use citadel_core::graph::GraphQuery;
 use citadel_core::storage::sqlite::SqliteStorage;
 use citadel_core::storage::Storage;
 use citadel_core::types::*;
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsIndexResult {
+    pub files_indexed: u32,
+    pub files_errored: u32,
+    pub files_skipped: u32,
+    pub nodes_created: u32,
+    pub edges_created: u32,
+    pub errors: Vec<String>,
+}
 
 #[napi]
 pub struct Database {
@@ -58,6 +70,54 @@ impl Database {
     #[napi]
     pub fn is_open(&self) -> bool {
         self.inner.lock().ok().and_then(|s| s.get_path()).is_some()
+    }
+
+    // ---- Index (extract + store) ----
+
+    #[napi]
+    pub fn index_files(
+        &self,
+        paths: Vec<String>,
+        root_dir: String,
+        framework_names: Vec<String>,
+        num_workers: u32,
+    ) -> napi::Result<JsIndexResult> {
+        let nw = num_workers as usize;
+
+        // 1. Extract all files (one call, no chunking needed)
+        let (results, content_hashes) = if nw > 1 {
+            extraction::extract_files_from_disk_parallel(&paths, &root_dir, &framework_names, nw)
+        } else {
+            extraction::extract_files_from_disk(&paths, &root_dir, &framework_names)
+        };
+
+        // 2. Build path/hash/language slices for batch store
+        let path_slices: Vec<&str> = paths.iter().map(|p| p.as_str()).collect();
+        let hash_slices: Vec<&str> = content_hashes.iter().map(|h| h.as_str()).collect();
+        let paths_and_hashes: Vec<(&str, &str)> = path_slices.iter().zip(hash_slices.iter()).map(|(p, h)| (*p, *h)).collect();
+        let languages: Vec<&str> = results.iter().map(|r| {
+            r.nodes.first()
+                .map(|n| n.language.as_str())
+                .unwrap_or("unknown")
+        }).collect();
+
+        // 3. Single batch store call — one transaction, all prepared once
+        let (fi, fe, fs, errs) = self.inner
+            .lock().map_err(napi_err)?
+            .batch_store_file_extractions(&paths_and_hashes, &languages, &results, &root_dir)
+            .map_err(napi_err)?;
+
+        let total_nodes: u32 = results.iter().map(|r| r.nodes.len() as u32).sum();
+        let total_edges: u32 = results.iter().map(|r| r.edges.len() as u32).sum();
+
+        Ok(JsIndexResult {
+            files_indexed: fi,
+            files_errored: fe,
+            files_skipped: fs,
+            nodes_created: total_nodes,
+            edges_created: total_edges,
+            errors: errs,
+        })
     }
 
     // ---- Node CRUD ----

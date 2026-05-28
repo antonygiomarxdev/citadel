@@ -69,6 +69,14 @@ pub struct JsExtractionError {
     pub column: Option<u32>,
 }
 
+/// Combined result from extract_files_from_disk: results + content hashes.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsExtractFromDiskResult {
+    pub results: Vec<JsExtractionResult>,
+    pub content_hashes: Vec<String>,
+}
+
 fn node_to_js(node: &Node) -> JsNode {
     JsNode {
         id: node.id.clone(),
@@ -127,9 +135,42 @@ fn error_to_js(err: &ExtractionError) -> JsExtractionError {
     }
 }
 
-/// Extracts symbols from multiple files in parallel using native Rust tree-sitter.
-/// Each file is parsed independently — rayon par_iter() distributes across CPU cores.
-/// This replaces the WASM-based tree-sitter extraction in TypeScript.
+fn result_to_js(r: citadel_core::extraction::ExtractionResult) -> JsExtractionResult {
+    JsExtractionResult {
+        nodes: r.nodes.iter().map(node_to_js).collect(),
+        edges: r.edges.iter().map(edge_to_js).collect(),
+        unresolved_references: r.unresolved_references.iter().map(unresolved_to_js).collect(),
+        errors: r.errors.iter().map(error_to_js).collect(),
+    }
+}
+
+/// Extracts symbols from files read from disk in parallel (rayon).
+/// File reads + SHA256 hashing happen in parallel, then extraction is
+/// parallelized with one tree_sitter::Parser per worker thread.
+///
+/// Returns results + content hashes in input order.
+#[napi]
+pub fn extract_files_from_disk(
+    paths: Vec<String>,
+    root_dir: String,
+    framework_names: Vec<String>,
+    num_workers: Option<u32>,
+) -> JsExtractFromDiskResult {
+    let nw = num_workers.unwrap_or(0) as usize;
+    let (results, content_hashes) = if nw > 1 {
+        extraction::extract_files_from_disk_parallel(&paths, &root_dir, &framework_names, nw)
+    } else {
+        extraction::extract_files_from_disk(&paths, &root_dir, &framework_names)
+    };
+    JsExtractFromDiskResult {
+        results: results.into_iter().map(result_to_js).collect(),
+        content_hashes,
+    }
+}
+
+/// Extracts symbols from pre-read content.
+/// Files must be passed as [[path1, content1], [path2, content2], ...].
+/// Kept for backward compatibility — prefer extract_files_from_disk for new code.
 #[napi]
 pub fn extract_files(
     files: Vec<Vec<String>>,
@@ -143,11 +184,6 @@ pub fn extract_files(
 
     extraction::extract_files_parallel(&tuples, &framework_names)
         .into_iter()
-        .map(|r| JsExtractionResult {
-            nodes: r.nodes.iter().map(node_to_js).collect(),
-            edges: r.edges.iter().map(edge_to_js).collect(),
-            unresolved_references: r.unresolved_references.iter().map(unresolved_to_js).collect(),
-            errors: r.errors.iter().map(error_to_js).collect(),
-        })
+        .map(result_to_js)
         .collect()
 }

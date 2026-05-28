@@ -1,5 +1,7 @@
 pub mod error;
+pub mod ffi;
 pub mod sqlite;
+#[cfg(test)]
 pub mod test_utils;
 pub mod traits;
 
@@ -41,7 +43,7 @@ fn fast_map<K: std::cmp::Eq + std::hash::Hash, V>() -> FastMap<K, V> {
 // New code should use the individual traits (NodeStore, EdgeStore, etc.)
 // or FullStore. This alias will be removed in citadel-core 0.4+.
 pub use traits::FullStore as Storage;
-pub use traits::{EdgeStore, FileStore, FullStore, Lifecycle, MetadataStore, NodeStore, StatsProvider, UnresolvedRefStore};
+pub use traits::{BatchOps, EdgeStore, FileStore, FullStore, Lifecycle, MetadataStore, NodeStore, StatsProvider, UnresolvedRefStore};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetrics {

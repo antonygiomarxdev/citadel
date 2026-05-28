@@ -10,9 +10,6 @@
  * continuation lines into a single line per bullet so the GFM
  * renderer produces clean paragraphs.
  *
- * Repo-level CHANGELOG.md viewing is unaffected (CommonMark treats
- * newlines as spaces there).
- *
  * Usage:
  *   extract-release-notes.mjs <version>     # read CHANGELOG.md
  *   extract-release-notes.mjs --stdin       # read from stdin (any text)
@@ -44,13 +41,6 @@ if (arg === '--stdin') {
   block = lines.slice(start, after === -1 ? lines.length : after);
 }
 
-// Track a stack of `{ indent: number }` frames so a continuation line
-// can attach to the right ancestor. Handles the post-nested-list
-// continuation pattern:
-//
-//     - top-level
-//         - nested
-//       back to top-level  <- 2-space indent, joins the top-level bullet
 const out = [];
 let buf = '';
 let stack = [];
@@ -67,16 +57,12 @@ function leadingSpaces(s) {
   return m ? m[1].length : 0;
 }
 
-// Bullets: `-`, `*`, `digit.` only. `+` is intentionally excluded — the
-// CHANGELOG uses literal `+` inline (`config + instructions`) and we
-// don't want to misread those as nested bullets.
 const listItemRe = /^(\s*)([-*]|\d+\.)\s+/;
 const fenceRe = /^\s*```/;
 
 let inFence = false;
 
 for (const line of block) {
-  // Fenced code blocks: pass through verbatim, no joining.
   if (fenceRe.test(line)) {
     flushBuf();
     stack = [];
